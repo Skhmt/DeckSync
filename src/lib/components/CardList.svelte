@@ -61,11 +61,11 @@
         <section class="space-y-2">
           {#if deckStore.groupByType}
             <div
-              class="flex items-center justify-between border-b border-base-300 pb-1.5 px-2"
+              class="flex items-center justify-between border-b border-base-300 pb-1.5 px-1 sm:px-2"
             >
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1.5 sm:gap-2">
                 <h2
-                  class="text-sm font-bold text-base-content tracking-wide uppercase"
+                  class="text-xs sm:text-sm font-bold text-base-content tracking-wide uppercase"
                 >
                   {group.title}
                 </h2>
@@ -73,7 +73,7 @@
                   {group.cards.reduce((sum, c) => sum + c.targetCount, 0)}
                 </span>
               </div>
-              <span class="text-xs text-base-content/60">
+              <span class="text-[11px] sm:text-xs text-base-content/60">
                 {group.cards.reduce((sum, c) => sum + c.verifiedCount, 0)} / {group.cards.reduce(
                   (sum, c) => sum + c.targetCount,
                   0,
@@ -99,18 +99,18 @@
                 role="button"
                 tabindex="0"
                 onclick={() => handleRowClick(card)}
-                class="flex items-center justify-between px-3 py-2.5 transition-colors cursor-pointer select-none {isVerified
+                class="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 min-h-[48px] transition-colors cursor-pointer select-none active:bg-base-300/40 {isVerified
                   ? 'bg-base-200/40 opacity-50 grayscale'
                   : isPartiallyVerified
                     ? 'bg-warning/5 hover:bg-warning/10'
                     : 'hover:bg-base-200/70'}"
               >
                 <!-- Left: Checkbox & Name & Badges -->
-                <div class="flex items-center gap-3 min-w-0 pr-2">
+                <div class="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
                   <!-- Checkbox -->
                   <button
                     onclick={(e) => handleCheckboxClick(e, card)}
-                    class="w-6 h-6 rounded flex items-center justify-center shrink-0 border transition-all {isVerified
+                    class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border transition-all active:scale-90 {isVerified
                       ? 'bg-success text-success-content border-success'
                       : isPartiallyVerified
                         ? 'bg-warning text-warning-content border-warning'
@@ -145,7 +145,7 @@
                   <div class="min-w-0">
                     <div class="flex items-center gap-1.5 flex-wrap">
                       <span
-                        class="font-medium text-sm text-base-content truncate {isVerified
+                        class="font-medium text-xs sm:text-sm text-base-content truncate {isVerified
                           ? 'line-through text-base-content/60'
                           : ''}"
                       >
@@ -164,11 +164,11 @@
                       {/if}
                     </div>
                     <div
-                      class="text-xs text-base-content/50 truncate flex items-center gap-2"
+                      class="text-[11px] sm:text-xs text-base-content/50 truncate flex items-center gap-1.5 sm:gap-2"
                     >
-                      <span>{card.scryfall?.type_line || "Card"}</span>
+                      <span class="truncate max-w-[130px] sm:max-w-none">{card.scryfall?.type_line || "Card"}</span>
                       {#if card.scryfall?.mana_cost}
-                        <span class="font-mono text-[11px]"
+                        <span class="font-mono text-[10px] sm:text-[11px] shrink-0"
                           >{card.scryfall.mana_cost}</span
                         >
                       {/if}
@@ -177,22 +177,22 @@
                 </div>
 
                 <!-- Right: Counter controls -->
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   {#if card.targetCount > 1}
                     <div
-                      class="flex items-center gap-1 bg-base-200 rounded-lg p-0.5 border border-base-300"
+                      class="flex items-center gap-0.5 sm:gap-1 bg-base-200 rounded-lg p-0.5 border border-base-300"
                     >
                       <button
                         onclick={(e) => handleDecrement(e, card)}
                         disabled={card.verifiedCount <= 0}
-                        class="btn btn-xs btn-square btn-ghost disabled:opacity-30"
+                        class="btn btn-ghost btn-square w-7 h-7 min-h-0 text-sm disabled:opacity-20 active:scale-90"
                         title="Decrement count"
                         aria-label="Decrement count"
                       >
                         -
                       </button>
                       <span
-                        class="font-bold text-xs px-1.5 min-w-[2.5rem] text-center {isVerified
+                        class="font-bold text-xs px-1 sm:px-1.5 min-w-[2rem] sm:min-w-[2.5rem] text-center {isVerified
                           ? 'text-success'
                           : isPartiallyVerified
                             ? 'text-warning'
@@ -202,7 +202,7 @@
                       </span>
                       <button
                         onclick={(e) => handleIncrement(e, card)}
-                        class="btn btn-xs btn-square btn-ghost"
+                        class="btn btn-ghost btn-square w-7 h-7 min-h-0 text-sm active:scale-90"
                         title="Increment count"
                         aria-label="Increment count"
                       >
@@ -211,7 +211,7 @@
                     </div>
                   {:else}
                     <div
-                      class="px-2 py-0.5 rounded text-xs font-mono font-medium {isVerified
+                      class="px-2 py-1 rounded text-xs font-mono font-medium {isVerified
                         ? 'bg-success/20 text-success'
                         : 'bg-base-200 text-base-content/60'}"
                     >

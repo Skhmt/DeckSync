@@ -89,13 +89,13 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open z-50">
-    <div class="modal-box max-w-4xl bg-base-100 border border-base-300 shadow-2xl p-6">
+  <div class="modal modal-open z-50 p-2 sm:p-4">
+    <div class="modal-box max-w-4xl bg-base-100 border border-base-300 shadow-2xl p-4 sm:p-6 w-full max-h-[92dvh] flex flex-col">
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-3 border-b border-base-300">
         <div>
-          <h3 class="font-bold text-lg text-base-content">Verification History Logs</h3>
-          <p class="text-xs text-base-content/60 mt-0.5">
+          <h3 class="font-bold text-base sm:text-lg text-base-content">Verification History Logs</h3>
+          <p class="text-[11px] sm:text-xs text-base-content/60 mt-0.5">
             IndexedDB local records of deck checks, missing cards, and verification results
           </p>
         </div>
@@ -127,9 +127,9 @@
         </div>
       {:else}
         <!-- Two Column Layout: Log list on left, detail on right -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mt-4">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 mt-3 sm:mt-4 overflow-y-auto">
           <!-- Left: Logs List (5 cols) -->
-          <div class="md:col-span-5 space-y-2 max-h-96 overflow-y-auto pr-1">
+          <div class="md:col-span-5 space-y-2 max-h-44 sm:max-h-56 md:max-h-96 overflow-y-auto pr-1">
             {#each logs as log (log.id)}
               {@const isSelected = selectedLog?.id === log.id}
               {@const isComplete = log.totalVerified >= log.totalExpected && log.totalExpected > 0}

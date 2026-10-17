@@ -5,8 +5,8 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open z-50">
-    <div class="modal-box max-w-lg bg-base-100 border border-error/30 shadow-2xl p-6">
+  <div class="modal modal-open z-50 p-2 sm:p-4">
+    <div class="modal-box max-w-lg bg-base-100 border border-error/30 shadow-2xl p-4 sm:p-6 w-full max-h-[92dvh] flex flex-col">
       <div class="flex items-center justify-between pb-3 border-b border-base-300">
         <div class="flex items-center gap-2">
           <div class="w-8 h-8 rounded-full bg-error text-error-content flex items-center justify-center font-bold">

@@ -12,6 +12,7 @@
   let isImportOpen = $state(false);
   let isHistoryOpen = $state(false);
   let isBannedOpen = $state(false);
+  let headerHeight = $state(60);
 
   onMount(async () => {
     // Attempt to restore prior session
@@ -19,9 +20,10 @@
   });
 </script>
 
-<div class="min-h-screen flex flex-col bg-base-300 text-base-content">
+<div class="min-h-dvh flex flex-col bg-base-300 text-base-content">
   <!-- Top Navigation & Summary -->
   <Header
+    bind:headerHeight
     onOpenImport={() => isImportOpen = true}
     onOpenHistory={() => isHistoryOpen = true}
     onOpenBanned={() => isBannedOpen = true}
@@ -29,7 +31,7 @@
 
   <!-- Format Warnings Banner (if card count invalid or banned cards) -->
   {#if !deckStore.cardCountValidation.isValid && deckStore.cards.length > 0}
-    <div class="bg-error/15 border-b border-error/30 text-error-content px-4 py-2 text-xs flex items-center justify-between">
+    <div class="bg-error/15 border-b border-error/30 text-error-content px-3 sm:px-4 py-2 text-xs flex items-center justify-between">
       <div class="flex items-center gap-2 max-w-7xl mx-auto w-full">
         <svg class="w-4 h-4 shrink-0 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -41,11 +43,11 @@
 
   <!-- Filter & View Controls Bar -->
   {#if deckStore.cards.length > 0}
-    <FilterBar />
+    <FilterBar {headerHeight} />
   {/if}
 
   <!-- Main Content Area -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+  <main class="flex-1 max-w-7xl w-full mx-auto px-2 sm:px-4 py-4 sm:py-6">
     <!-- Loading Overlay -->
     {#if deckStore.isLoading}
       <div class="py-24 flex flex-col items-center justify-center text-center space-y-4">

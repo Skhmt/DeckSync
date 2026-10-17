@@ -57,8 +57,8 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open z-50">
-    <div class="modal-box max-w-2xl bg-base-100 border border-base-300 shadow-2xl p-6">
+  <div class="modal modal-open z-50 p-2 sm:p-4">
+    <div class="modal-box max-w-2xl bg-base-100 border border-base-300 shadow-2xl p-4 sm:p-6 w-full max-h-[92dvh] flex flex-col">
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-3 border-b border-base-300">
         <div>

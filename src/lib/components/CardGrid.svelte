@@ -19,23 +19,23 @@
       {#if group.cards.length > 0}
         <section class="space-y-3">
           {#if deckStore.groupByType}
-            <div class="flex items-center justify-between border-b border-base-300 pb-2">
-              <div class="flex items-center gap-2">
-                <h2 class="text-base md:text-lg font-bold text-base-content tracking-wide uppercase">
+            <div class="flex items-center justify-between border-b border-base-300 pb-1.5 sm:pb-2">
+              <div class="flex items-center gap-1.5 sm:gap-2">
+                <h2 class="text-sm sm:text-base md:text-lg font-bold text-base-content tracking-wide uppercase">
                   {group.title}
                 </h2>
-                <span class="badge badge-sm badge-neutral font-mono">
+                <span class="badge badge-xs sm:badge-sm badge-neutral font-mono">
                   {group.cards.reduce((sum, c) => sum + c.targetCount, 0)}
                 </span>
               </div>
-              <span class="text-xs text-base-content/60">
+              <span class="text-[11px] sm:text-xs text-base-content/60">
                 {group.cards.reduce((sum, c) => sum + c.verifiedCount, 0)} / {group.cards.reduce((sum, c) => sum + c.targetCount, 0)} verified
               </span>
             </div>
           {/if}
 
           <!-- Responsive Card Grid: mobile 2 columns, tablet 3-4, desktop 5-6 -->
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-4">
             {#each group.cards as card (card.id)}
               <CardItem {card} />
             {/each}

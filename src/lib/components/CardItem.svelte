@@ -48,7 +48,7 @@
   role="button"
   tabindex="0"
   onclick={handleCardClick}
-  class="relative rounded-2xl overflow-hidden shadow-md group transition-all duration-200 cursor-pointer select-none border-2 {isVerified
+  class="relative rounded-2xl overflow-hidden shadow-md group transition-all duration-200 cursor-pointer select-none border-2 active:scale-[0.98] {isVerified
     ? 'border-success/50 card-verified'
     : isPartiallyVerified
       ? 'border-warning'
@@ -68,15 +68,15 @@
     {:else}
       <!-- Fallback when Scryfall image is not available or custom card -->
       <div
-        class="w-full h-full p-4 flex flex-col justify-between bg-gradient-to-b from-neutral-800 to-neutral-950 text-neutral-100"
+        class="w-full h-full p-3 sm:p-4 flex flex-col justify-between bg-gradient-to-b from-neutral-800 to-neutral-950 text-neutral-100"
       >
         <div>
           <span
-            class="text-xs font-mono uppercase tracking-wider text-neutral-400"
+            class="text-[11px] sm:text-xs font-mono uppercase tracking-wider text-neutral-400"
           >
             {card.scryfall?.type_line || "Card"}
           </span>
-          <h3 class="font-bold text-base mt-1 line-clamp-3">{card.name}</h3>
+          <h3 class="font-bold text-sm sm:text-base mt-1 line-clamp-3">{card.name}</h3>
         </div>
         <div class="text-xs text-neutral-400">
           {card.scryfall?.mana_cost || ""}
@@ -90,10 +90,10 @@
         class="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none"
       >
         <div
-          class="w-14 h-14 rounded-full bg-success text-success-content flex items-center justify-center shadow-lg border-2 border-white/50"
+          class="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-success text-success-content flex items-center justify-center shadow-lg border-2 border-white/50"
         >
           <svg
-            class="w-8 h-8"
+            class="w-7 h-7 sm:w-8 sm:h-8"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -110,7 +110,7 @@
     {/if}
 
     <!-- Top Right: Banned & Game Changer Badges & Flip Button -->
-    <div class="absolute top-2 right-2 z-10 flex flex-col items-end gap-1.5">
+    <div class="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 flex flex-col items-end gap-1 sm:gap-1.5">
       {#if isBanned}
         <span
           class="badge badge-error badge-xs sm:badge-sm font-bold shadow-md uppercase tracking-wider"
@@ -131,7 +131,7 @@
       {#if hasFaces}
         <button
           onclick={handleFlip}
-          class="btn btn-circle btn-xs bg-black/70 hover:bg-black text-white border-white/30 shadow-md backdrop-blur-xs"
+          class="btn btn-circle btn-xs w-7 h-7 sm:w-6 sm:h-6 min-h-0 bg-black/70 hover:bg-black text-white border-white/30 shadow-md backdrop-blur-xs active:scale-90"
           title="Flip card face"
           aria-label="Flip card face"
         >
@@ -152,19 +152,27 @@
       {/if}
     </div>
 
-    <!-- Bottom Bar: Multi-copy count & +/- buttons -->
+    <!-- Bottom Bar: Card Name & Multi-copy count & +/- buttons -->
     <div
-      class="absolute bottom-2 inset-x-2 z-10 flex items-center justify-between"
+      class="absolute bottom-1.5 inset-x-1.5 sm:bottom-2 sm:inset-x-2 z-10 flex flex-col gap-1"
     >
+      <!-- Always show Card Name so users can identify cards -->
+      <div
+        class="bg-black/75 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-medium text-white/90 truncate w-full border border-white/10 shadow-xs"
+      >
+        {card.name}
+      </div>
+
       {#if card.targetCount > 1}
+        <!-- Multi-copy counter bar below card name -->
         <div
-          class="flex items-center gap-1 bg-black/80 backdrop-blur-md rounded-xl p-1 border border-white/20 shadow-md w-full justify-between"
+          class="flex items-center gap-1 bg-black/85 backdrop-blur-md rounded-xl p-0.5 sm:p-1 border border-white/20 shadow-md w-full justify-between"
         >
           <!-- Decrement button -->
           <button
             onclick={handleDecrement}
             disabled={card.verifiedCount <= 0}
-            class="btn btn-square btn-xs btn-neutral text-white disabled:opacity-30 disabled:bg-transparent"
+            class="btn btn-square btn-xs w-7 h-7 sm:w-6 sm:h-6 min-h-0 btn-neutral text-white disabled:opacity-20 active:scale-90"
             title="Decrement verified count"
             aria-label="Decrement count"
           >
@@ -173,7 +181,7 @@
 
           <!-- Count Display: Verified / Target -->
           <span
-            class="font-bold text-xs px-2 {isVerified
+            class="font-bold text-xs px-1 text-center {isVerified
               ? 'text-success'
               : isPartiallyVerified
                 ? 'text-warning'
@@ -185,19 +193,12 @@
           <!-- Increment button -->
           <button
             onclick={handleIncrement}
-            class="btn btn-square btn-xs btn-neutral text-white"
+            class="btn btn-square btn-xs w-7 h-7 sm:w-6 sm:h-6 min-h-0 btn-neutral text-white active:scale-90"
             title="Increment verified count"
             aria-label="Increment count"
           >
             +
           </button>
-        </div>
-      {:else}
-        <!-- Single copy: compact name bar -->
-        <div
-          class="bg-black/70 backdrop-blur-xs px-2 py-1 rounded-md text-[11px] font-medium text-white/90 truncate w-full border border-white/10 shadow-xs"
-        >
-          {card.name}
         </div>
       {/if}
     </div>
