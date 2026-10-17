@@ -51,13 +51,12 @@
   <div
     class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3"
   >
-    <!-- Brand & Deck Title -->
     <div class="flex items-center gap-3">
-      <div
-        class="w-10 h-10 rounded-xl bg-primary text-primary-content flex items-center justify-center font-bold text-xl shadow-md"
-      >
-        DS
-      </div>
+      <img
+        src={`${import.meta.env.BASE_URL}icon.png`}
+        alt="DeckSync"
+        class="w-10 h-10 rounded-xl shadow-md object-contain"
+      />
       <div>
         <div class="flex items-center gap-2">
           <h1

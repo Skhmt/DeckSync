@@ -11,7 +11,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg'],
+      includeAssets: ['icon.png'],
       manifest: {
         name: 'DeckSync - MTG Deck Verification',
         short_name: 'DeckSync',
@@ -22,9 +22,9 @@ export default defineConfig({
         orientation: 'portrait-primary',
         icons: [
           {
-            src: 'favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: 'icon.png',
+            sizes: '1024x1024',
+            type: 'image/png',
             purpose: 'any maskable'
           }
         ]
