@@ -12,6 +12,7 @@ It's a static single page application that can be installed as a progressive web
 - Fix URL deck imports or just remove it for simplicity
 - Add a modal where you can tap a card and quickly get oracle text (maybe? feels like scope creep)
 - Minimap/floating legend for the card categories
+- Mobile support
 
 ## Development
 
