@@ -13,6 +13,7 @@ It's a static single page application that can be installed as a progressive web
 - Add a modal where you can tap a card and quickly get oracle text (maybe? feels like scope creep)
 - Minimap/floating legend for the card categories
 - Mobile support
+- When there's multiple of a card, it overwrites the card name on the bottom - it should be above that
 
 ## Development
 
