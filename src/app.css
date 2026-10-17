@@ -1,0 +1,45 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* Custom utility styles for card verification */
+.card-verified {
+  filter: grayscale(100%) brightness(55%);
+  transition: filter 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+.card-unverified {
+  filter: grayscale(0%) brightness(100%);
+  transition: filter 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+/* Perspective for 3D card flipping if previewing double faces */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
