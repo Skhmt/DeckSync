@@ -152,21 +152,16 @@
       {/if}
     </div>
 
-    <!-- Bottom Bar: Card Name & Multi-copy count & +/- buttons -->
+    <!-- Bottom Bar: Multi-copy count & +/- buttons above Card Name -->
     <div
       class="absolute bottom-1.5 inset-x-1.5 sm:bottom-2 sm:inset-x-2 z-10 flex flex-col gap-1"
     >
-      <!-- Always show Card Name so users can identify cards -->
-      <div
-        class="bg-black/75 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-medium text-white/90 truncate w-full border border-white/10 shadow-xs"
-      >
-        {card.name}
-      </div>
-
       {#if card.targetCount > 1}
-        <!-- Multi-copy counter bar below card name -->
+        <!-- Multi-copy counter bar above card name -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="flex items-center gap-1 bg-black/85 backdrop-blur-md rounded-xl p-0.5 sm:p-1 border border-white/20 shadow-md w-full justify-between"
+          onclick={(e) => e.stopPropagation()}
         >
           <!-- Decrement button -->
           <button
@@ -201,6 +196,13 @@
           </button>
         </div>
       {/if}
+
+      <!-- Always show Card Name so users can identify cards -->
+      <div
+        class="bg-black/75 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-medium text-white/90 truncate w-full border border-white/10 shadow-xs"
+      >
+        {card.name}
+      </div>
     </div>
   </div>
 </div>

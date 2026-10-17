@@ -52,7 +52,8 @@
     if (log.checkedStatus) {
       for (const card of deckStore.cards) {
         if (typeof log.checkedStatus[card.name] === 'number') {
-          card.verifiedCount = log.checkedStatus[card.name];
+          // Never restore a negative count
+          card.verifiedCount = Math.max(0, log.checkedStatus[card.name]);
         }
       }
     }

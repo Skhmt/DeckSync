@@ -179,8 +179,10 @@
                 <!-- Right: Counter controls -->
                 <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   {#if card.targetCount > 1}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                       class="flex items-center gap-0.5 sm:gap-1 bg-base-200 rounded-lg p-0.5 border border-base-300"
+                      onclick={(e) => e.stopPropagation()}
                     >
                       <button
                         onclick={(e) => handleDecrement(e, card)}

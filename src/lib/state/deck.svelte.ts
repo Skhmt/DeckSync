@@ -331,7 +331,8 @@ export class DeckState {
       if (session.checkedStatus) {
         for (const card of this.cards) {
           if (typeof session.checkedStatus[card.name] === 'number') {
-            card.verifiedCount = session.checkedStatus[card.name];
+            // Never restore a negative count
+            card.verifiedCount = Math.max(0, session.checkedStatus[card.name]);
           }
         }
       }
