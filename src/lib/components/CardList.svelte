@@ -56,9 +56,9 @@
       </p>
     </div>
   {:else}
-    {#each deckStore.displayedGroups as group}
+    {#each deckStore.displayedGroups as group, i}
       {#if group.cards.length > 0}
-        <section class="space-y-2">
+        <section id="category-{i}" class="space-y-2">
           {#if deckStore.groupByType}
             <div
               class="flex items-center justify-between border-b border-base-300 pb-1.5 px-1 sm:px-2"

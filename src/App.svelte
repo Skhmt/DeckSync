@@ -8,11 +8,13 @@
   import ImportModal from './lib/components/ImportModal.svelte';
   import HistoryModal from './lib/components/HistoryModal.svelte';
   import BannedModal from './lib/components/BannedModal.svelte';
+  import CategoryNav from './lib/components/CategoryNav.svelte';
 
   let isImportOpen = $state(false);
   let isHistoryOpen = $state(false);
   let isBannedOpen = $state(false);
   let headerHeight = $state(60);
+  let filterBarHeight = $state(56);
 
   onMount(async () => {
     // Attempt to restore prior session
@@ -43,7 +45,7 @@
 
   <!-- Filter & View Controls Bar -->
   {#if deckStore.cards.length > 0}
-    <FilterBar {headerHeight} />
+    <FilterBar {headerHeight} bind:filterHeight={filterBarHeight} />
   {/if}
 
   <!-- Main Content Area -->
@@ -88,12 +90,18 @@
         </div>
       </div>
     {:else}
-      <!-- Cards Display View: Grid or List -->
-      {#if deckStore.viewMode === 'grid'}
-        <CardGrid />
-      {:else}
-        <CardList />
-      {/if}
+      <!-- Cards Display View: Grid or List, with floating category legend on desktop -->
+      <div class="flex items-start gap-4">
+        <div class="flex-1 min-w-0">
+          {#if deckStore.viewMode === 'grid'}
+            <CardGrid />
+          {:else}
+            <CardList />
+          {/if}
+        </div>
+        <!-- Floating category legend (desktop only, needs grouped sections) -->
+        <CategoryNav stickyTop={headerHeight + filterBarHeight + 8} />
+      </div>
     {/if}
   </main>
 

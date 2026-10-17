@@ -1,7 +1,13 @@
 <script lang="ts">
   import { deckStore } from '../state/deck.svelte';
 
-  let { headerHeight = 60 }: { headerHeight?: number } = $props();
+  let {
+    headerHeight = 60,
+    filterHeight = $bindable(56),
+  }: {
+    headerHeight?: number;
+    filterHeight?: number;
+  } = $props();
 
   const filterOptions: { id: 'all' | 'not_found' | 'found'; label: string; shortLabel: string; count?: number }[] = $derived([
     { id: 'all', label: 'Full Deck', shortLabel: 'All', count: deckStore.totalExpectedCards },
@@ -11,6 +17,7 @@
 </script>
 
 <div
+  bind:clientHeight={filterHeight}
   class="bg-base-200/90 backdrop-blur-md border-b border-base-300 py-2 sm:py-2.5 px-3 sm:px-4 sticky z-20 shadow-xs transition-[top] duration-150"
   style="top: {headerHeight}px;"
 >
