@@ -1,7 +1,16 @@
 <script lang="ts">
   import { deckStore } from "../state/deck.svelte";
   import type { MTGFormat } from "../types";
-  import { boltIconSvg, colorIcons } from "../icons";
+  import {
+    banIconSvg,
+    boltIconSvg,
+    clockIconSvg,
+    colorIcons,
+    githubIconSvg,
+    importIconSvg,
+    saveLogIconSvg,
+    warningIconSvg,
+  } from "../icons";
 
   let {
     headerHeight = $bindable(60),
@@ -118,9 +127,7 @@
           class="btn btn-primary btn-xs sm:btn-sm gap-1 shadow-sm"
           title="Import Decklist"
         >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
+          <span class="w-3.5 h-3.5 shrink-0">{@html importIconSvg}</span>
           <span class="text-xs">Import</span>
         </button>
 
@@ -134,9 +141,7 @@
             {#if isLoggingSuccess}
               <span class="text-success font-bold text-xs">✓</span>
             {:else}
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
+              <span class="w-3.5 h-3.5 shrink-0">{@html saveLogIconSvg}</span>
             {/if}
           </button>
         {/if}
@@ -147,10 +152,19 @@
           title="Verification History & Logs"
           aria-label="Verification History"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <span class="w-4 h-4">{@html clockIconSvg}</span>
         </button>
+
+        <a
+          href="https://github.com/Skhmt/decksync"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-ghost btn-xs sm:btn-sm btn-square"
+          title="DeckSync on GitHub"
+          aria-label="DeckSync on GitHub"
+        >
+          <span class="w-4 h-4">{@html githubIconSvg}</span>
+        </a>
       </div>
     </div>
 
@@ -213,19 +227,7 @@
           class="btn btn-error btn-xs sm:btn-sm gap-1 animate-pulse"
           title="Click to see banned cards found in this deck"
         >
-          <svg
-            class="w-3.5 h-3.5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-            />
-          </svg>
+          <span class="w-3.5 h-3.5 shrink-0">{@html banIconSvg}</span>
           {deckStore.bannedCards.length} Banned!
         </button>
       {/if}
@@ -236,19 +238,7 @@
           class="badge badge-error badge-xs sm:badge-sm md:badge-md gap-1 font-semibold"
           title={deckStore.cardCountValidation.message}
         >
-          <svg
-            class="w-3 h-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-            />
-          </svg>
+          <span class="w-3 h-3 shrink-0">{@html warningIconSvg}</span>
           <span>Count: {deckStore.totalExpectedCards}</span>
         </div>
       {/if}
@@ -260,19 +250,7 @@
         onclick={onOpenImport}
         class="btn btn-primary btn-sm gap-1.5 shadow-sm"
       >
-        <svg
-          class="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-          />
-        </svg>
+        <span class="w-4 h-4 shrink-0">{@html importIconSvg}</span>
         <span>Import</span>
       </button>
 
@@ -290,19 +268,7 @@
               ✓ Logged!
             </span>
           {:else}
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-              />
-            </svg>
+            <span class="w-4 h-4 shrink-0">{@html saveLogIconSvg}</span>
             <span class="hidden sm:inline">Save Log</span>
           {/if}
         </button>
@@ -314,20 +280,19 @@
         title="Verification History & Logs"
         aria-label="Verification History"
       >
-        <svg
-          class="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <span class="w-5 h-5">{@html clockIconSvg}</span>
       </button>
+
+      <a
+        href="https://github.com/Skhmt/decksync"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-ghost btn-sm btn-square"
+        title="DeckSync on GitHub"
+        aria-label="DeckSync on GitHub"
+      >
+        <span class="w-5 h-5">{@html githubIconSvg}</span>
+      </a>
     </div>
   </div>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { deckStore } from "../state/deck.svelte";
   import type { DeckCardItem } from "../types";
-  import { boltIconSvg } from "../icons";
+  import { boltIconSvg, checkIconSvg, questionCircleIconSvg } from "../icons";
 
   function handleRowClick(card: DeckCardItem) {
     deckStore.toggleCard(card.id);
@@ -35,19 +35,7 @@
       <div
         class="w-16 h-16 mx-auto mb-4 rounded-full bg-base-300 flex items-center justify-center text-base-content/40"
       >
-        <svg
-          class="w-8 h-8"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <span class="w-8 h-8">{@html questionCircleIconSvg}</span>
       </div>
       <h3 class="text-base font-semibold text-base-content">
         No cards match your filter
@@ -124,19 +112,7 @@
                     aria-label="Verify checkbox"
                   >
                     {#if isVerified}
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="3"
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
+                      <span class="w-4 h-4">{@html checkIconSvg}</span>
                     {:else if isPartiallyVerified}
                       <span class="text-[10px] font-bold"
                         >{card.verifiedCount}</span

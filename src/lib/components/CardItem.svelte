@@ -2,7 +2,7 @@
   import type { DeckCardItem } from "../types";
   import { deckStore } from "../state/deck.svelte";
   import { getCardImageUrl } from "../api/scryfall";
-  import { boltIconSvg } from "../icons";
+  import { boltIconSvg, checkIconSvg, flipIconSvg } from "../icons";
 
   let { card }: { card: DeckCardItem } = $props();
 
@@ -95,19 +95,7 @@
         <div
           class="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-success text-success-content flex items-center justify-center shadow-lg border-2 border-white/50"
         >
-          <svg
-            class="w-7 h-7 sm:w-8 sm:h-8"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="3.5"
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
+          <span class="w-7 h-7 sm:w-8 sm:h-8">{@html checkIconSvg}</span>
         </div>
       </div>
     {/if}
@@ -144,19 +132,7 @@
           title="Flip card face"
           aria-label="Flip card face"
         >
-          <svg
-            class="w-3.5 h-3.5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.5"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
+          <span class="w-3.5 h-3.5 shrink-0">{@html flipIconSvg}</span>
         </button>
       {/if}
     </div>

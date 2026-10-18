@@ -11,6 +11,7 @@
   import GameChangerModal from './lib/components/GameChangerModal.svelte';
   import VerificationToast from './lib/components/VerificationToast.svelte';
   import CategoryNav from './lib/components/CategoryNav.svelte';
+  import { archiveIconSvg, warningIconSvg } from './lib/icons';
 
   let isImportOpen = $state(false);
   let isHistoryOpen = $state(false);
@@ -39,9 +40,7 @@
   {#if !deckStore.cardCountValidation.isValid && deckStore.cards.length > 0}
     <div class="bg-error/15 border-b border-error/30 text-error-content px-3 sm:px-4 py-2 text-xs flex items-center justify-between">
       <div class="flex items-center gap-2 max-w-7xl mx-auto w-full">
-        <svg class="w-4 h-4 shrink-0 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
+        <span class="w-4 h-4 shrink-0 text-error">{@html warningIconSvg}</span>
         <span class="font-medium text-error">{deckStore.cardCountValidation.message}</span>
       </div>
     </div>
@@ -77,9 +76,7 @@
       <!-- Empty State -->
       <div class="py-24 text-center max-w-md mx-auto space-y-4">
         <div class="w-20 h-20 rounded-2xl bg-base-200 mx-auto flex items-center justify-center text-primary shadow-sm">
-          <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
+          <span class="w-10 h-10">{@html archiveIconSvg}</span>
         </div>
         <div>
           <h2 class="text-xl font-bold text-base-content">No Deck Loaded</h2>

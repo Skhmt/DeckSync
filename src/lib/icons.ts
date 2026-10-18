@@ -6,6 +6,22 @@ import skullIcon from "../assets/icons/skull-solid-full.svg?raw";
 import fireIcon from "../assets/icons/fire-solid-full.svg?raw";
 import treeIcon from "../assets/icons/tree-solid-full.svg?raw";
 import boltIcon from "../assets/icons/bolt-solid-full.svg?raw";
+import clockIcon from "../assets/icons/clock-regular-full.svg?raw";
+import githubIcon from "../assets/icons/github-brands-solid-full.svg?raw";
+import arrowUpFromBracketIcon from "../assets/icons/arrow-up-from-bracket-solid-full.svg?raw";
+import floppyDiskIcon from "../assets/icons/floppy-disk-solid-full.svg?raw";
+import banIcon from "../assets/icons/ban-solid-full.svg?raw";
+import triangleExclamationIcon from "../assets/icons/triangle-exclamation-solid-full.svg?raw";
+import boxArchiveIcon from "../assets/icons/box-archive-solid-full.svg?raw";
+import arrowDownAZIcon from "../assets/icons/arrow-down-a-z-solid-full.svg?raw";
+import listIcon from "../assets/icons/list-solid-full.svg?raw";
+import borderAllIcon from "../assets/icons/border-all-solid-full.svg?raw";
+import ellipsisVerticalIcon from "../assets/icons/ellipsis-vertical-solid-full.svg?raw";
+import checkIcon from "../assets/icons/check-solid-full.svg?raw";
+import arrowsRotateIcon from "../assets/icons/arrows-rotate-solid-full.svg?raw";
+import clipboardCheckIcon from "../assets/icons/clipboard-check-solid-full.svg?raw";
+import xmarkIcon from "../assets/icons/xmark-solid-full.svg?raw";
+import circleQuestionIcon from "../assets/icons/circle-question-solid-full.svg?raw";
 
 /**
  * Prepare an inlined SVG string for use with {@html}:
@@ -30,3 +46,25 @@ export const colorIcons: Record<string, string> = {
 
 // Game changer lightning bolt (Font Awesome "bolt", solid full)
 export const boltIconSvg = inlineIcon(boltIcon);
+
+// Verification history clock (Font Awesome "clock", regular full)
+export const clockIconSvg = inlineIcon(clockIcon);
+
+// GitHub brand mark (Font Awesome "github", brands solid full)
+export const githubIconSvg = inlineIcon(githubIcon);
+
+// General UI icons (Font Awesome Free 7.3.1, "full" solid variants)
+export const importIconSvg = inlineIcon(arrowUpFromBracketIcon); // arrow-up-from-bracket
+export const saveLogIconSvg = inlineIcon(floppyDiskIcon); // floppy-disk
+export const banIconSvg = inlineIcon(banIcon); // ban
+export const warningIconSvg = inlineIcon(triangleExclamationIcon); // triangle-exclamation
+export const archiveIconSvg = inlineIcon(boxArchiveIcon); // box-archive
+export const sortAZIconSvg = inlineIcon(arrowDownAZIcon); // arrow-down-a-z
+export const listIconSvg = inlineIcon(listIcon); // list
+export const gridIconSvg = inlineIcon(borderAllIcon); // border-all (2x2 quadrants)
+export const ellipsisIconSvg = inlineIcon(ellipsisVerticalIcon); // ellipsis-vertical
+export const checkIconSvg = inlineIcon(checkIcon); // check
+export const flipIconSvg = inlineIcon(arrowsRotateIcon); // arrows-rotate
+export const clipboardCheckIconSvg = inlineIcon(clipboardCheckIcon); // clipboard-check
+export const xmarkIconSvg = inlineIcon(xmarkIcon); // xmark
+export const questionCircleIconSvg = inlineIcon(circleQuestionIcon); // circle-question

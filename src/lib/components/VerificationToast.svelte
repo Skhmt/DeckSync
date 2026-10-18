@@ -1,5 +1,6 @@
 <script lang="ts">
   import { deckStore } from '../state/deck.svelte';
+  import { checkIconSvg, xmarkIconSvg } from '../icons';
 
   const TOAST_DURATION_MS = 5000;
 
@@ -31,15 +32,11 @@
     >
       {#if toast.action === 'found'}
         <span class="w-6 h-6 shrink-0 rounded-full bg-success text-success-content flex items-center justify-center">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-          </svg>
+          <span class="w-3.5 h-3.5 shrink-0">{@html checkIconSvg}</span>
         </span>
       {:else}
         <span class="w-6 h-6 shrink-0 rounded-full bg-error text-error-content flex items-center justify-center">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <span class="w-3.5 h-3.5 shrink-0">{@html xmarkIconSvg}</span>
         </span>
       {/if}
       <p class="text-xs sm:text-sm font-medium text-base-content truncate">{message}</p>
