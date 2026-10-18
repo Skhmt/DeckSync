@@ -6,8 +6,13 @@
 </script>
 
 {#if isOpen}
-  <div class="modal modal-open z-50 p-2 sm:p-4">
-    <div class="modal-box max-w-lg bg-base-100 border border-warning/30 shadow-2xl p-4 sm:p-6 w-full max-h-[92dvh] flex flex-col">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="modal modal-open z-50 p-2 sm:p-4" onclick={onClose}>
+    <div
+      class="modal-box max-w-lg bg-base-100 border border-warning/30 shadow-2xl p-4 sm:p-6 w-full max-h-[92dvh] flex flex-col"
+      onclick={(e) => e.stopPropagation()}
+    >
       <div class="flex items-center justify-between pb-3 border-b border-base-300">
         <div class="flex items-center gap-2">
           <div class="w-8 h-8 rounded-full bg-warning flex items-center justify-center">
@@ -49,11 +54,6 @@
         </div>
       </div>
 
-      <div class="modal-action mt-6 pt-3 border-t border-base-300">
-        <button onclick={onClose} class="btn btn-sm btn-neutral">
-          Got It
-        </button>
-      </div>
     </div>
   </div>
 {/if}
