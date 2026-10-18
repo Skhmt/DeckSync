@@ -8,12 +8,14 @@
   import ImportModal from './lib/components/ImportModal.svelte';
   import HistoryModal from './lib/components/HistoryModal.svelte';
   import BannedModal from './lib/components/BannedModal.svelte';
+  import GameChangerModal from './lib/components/GameChangerModal.svelte';
   import VerificationToast from './lib/components/VerificationToast.svelte';
   import CategoryNav from './lib/components/CategoryNav.svelte';
 
   let isImportOpen = $state(false);
   let isHistoryOpen = $state(false);
   let isBannedOpen = $state(false);
+  let isGameChangersOpen = $state(false);
   let headerHeight = $state(60);
   let filterBarHeight = $state(56);
 
@@ -30,6 +32,7 @@
     onOpenImport={() => isImportOpen = true}
     onOpenHistory={() => isHistoryOpen = true}
     onOpenBanned={() => isBannedOpen = true}
+    onOpenGameChangers={() => isGameChangersOpen = true}
   />
 
   <!-- Format Warnings Banner (if card count invalid or banned cards) -->
@@ -110,6 +113,7 @@
   <ImportModal isOpen={isImportOpen} onClose={() => isImportOpen = false} />
   <HistoryModal isOpen={isHistoryOpen} onClose={() => isHistoryOpen = false} />
   <BannedModal isOpen={isBannedOpen} onClose={() => isBannedOpen = false} />
+  <GameChangerModal isOpen={isGameChangersOpen} onClose={() => isGameChangersOpen = false} />
 
   <!-- Bottom toast with undo when a card is verified or removed in the filtered views -->
   <VerificationToast />

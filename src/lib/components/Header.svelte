@@ -7,11 +7,13 @@
     onOpenImport,
     onOpenHistory,
     onOpenBanned,
+    onOpenGameChangers,
   }: {
     headerHeight?: number;
     onOpenImport: () => void;
     onOpenHistory: () => void;
     onOpenBanned: () => void;
+    onOpenGameChangers: () => void;
   } = $props();
 
   const formats: { value: MTGFormat; label: string }[] = [
@@ -169,9 +171,10 @@
 
       <!-- Game Changer Count Badge (Commander / EDH only) -->
       {#if deckStore.isCommander && deckStore.gameChangerCount > 0}
-        <div
-          class="badge badge-warning badge-xs sm:badge-sm md:badge-md gap-1 font-semibold shadow-xs"
-          title="Cards flagged as game changers by Scryfall"
+        <button
+          onclick={onOpenGameChangers}
+          class="badge badge-warning badge-xs sm:badge-sm md:badge-md gap-1 font-semibold shadow-xs cursor-pointer hover:brightness-90 active:scale-95 transition-all duration-150"
+          title="Click to see game changers in this deck"
         >
           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path
@@ -179,7 +182,7 @@
             />
           </svg>
           <span>{deckStore.gameChangerCount} <span class="hidden sm:inline">Game Changer{deckStore.gameChangerCount === 1 ? "" : "s"}</span><span class="sm:hidden">GC</span></span>
-        </div>
+        </button>
       {/if}
 
       <!-- Banned Cards Alert -->

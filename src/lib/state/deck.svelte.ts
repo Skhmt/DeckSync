@@ -70,6 +70,10 @@ export class DeckState {
   // Game changers only matter for Commander / EDH
   isCommander = $derived(this.format === 'commander');
 
+  gameChangerCards = $derived(
+    this.cards.filter(c => c.scryfall?.game_changer)
+  );
+
   bannedCards = $derived.by(() => {
     const formatKey = this.format === 'commander' ? 'commander' : this.format;
     return this.cards.filter(c => {
