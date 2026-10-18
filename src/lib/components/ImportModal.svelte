@@ -10,6 +10,15 @@
   let errorMessage = $state('');
   let isImporting = $state(false);
 
+  // Start fresh each time the modal opens so users can immediately paste a new
+  // list without first deleting any leftover text (and stale error messages).
+  $effect(() => {
+    if (isOpen) {
+      pasteText = '';
+      errorMessage = '';
+    }
+  });
+
   let detectedPlatform = $derived.by(() => {
     const val = urlInput.trim().toLowerCase();
     if (val.includes('moxfield.com')) return 'Moxfield';
