@@ -18,6 +18,18 @@
   let isBanned = $derived(
     card.scryfall?.legalities?.[deckStore.format] === "banned",
   );
+  let isNotLegal = $derived(
+    card.scryfall?.legalities?.[deckStore.format] === "not_legal",
+  );
+  let copyLimit = $derived(deckStore.getCopyLimit(card));
+  let isOverLimit = $derived(
+    copyLimit !== null && card.targetCount > copyLimit,
+  );
+  let hasLegalityIssue = $derived(
+    isBanned || isNotLegal || isOverLimit,
+  );
+
+  let notLegalTooltip = $derived(`Card is not legal in ${deckStore.format}`);
 
   let currentImageUrl = $derived(
     getCardImageUrl(card.scryfall, activeFaceIndex),
@@ -49,7 +61,7 @@
   role="button"
   tabindex="0"
   onclick={handleCardClick}
-  class="relative rounded-2xl overflow-hidden shadow-md group transition-all duration-200 cursor-pointer select-none border-2 active:scale-[0.98] {isBanned
+  class="relative rounded-2xl overflow-hidden shadow-md group transition-all duration-200 cursor-pointer select-none border-2 active:scale-[0.98] {hasLegalityIssue
     ? 'border-error hover:shadow-xl hover:scale-[1.02]'
     : isVerified
       ? 'border-success/50 card-verified'
@@ -100,18 +112,36 @@
       </div>
     {/if}
 
-    <!-- Light red tint overlay for banned cards (sits below z-10 badges) -->
-    {#if isBanned}
+    <!-- Light red tint overlay for cards with legality issues (sits below z-10 badges) -->
+    {#if hasLegalityIssue}
       <div class="absolute inset-0 bg-error/20 pointer-events-none"></div>
     {/if}
 
-    <!-- Top Right: Banned & Game Changer Badges & Flip Button -->
+    <!-- Top Right: Banned / Not Legal / Over Limit & Game Changer Badges & Flip Button -->
     <div class="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 flex flex-col items-end gap-1 sm:gap-1.5">
       {#if isBanned}
         <span
           class="badge badge-error badge-xs sm:badge-sm font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase tracking-wider"
         >
           Banned
+        </span>
+      {/if}
+
+      {#if isNotLegal}
+        <span
+          class="badge badge-error badge-xs sm:badge-sm font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase tracking-wider"
+          title={notLegalTooltip}
+        >
+          Not Legal
+        </span>
+      {/if}
+
+      {#if isOverLimit}
+        <span
+          class="badge badge-error badge-xs sm:badge-sm font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase tracking-wider"
+          title="{deckStore.format} allows max {copyLimit} copies of this card"
+        >
+          Max {copyLimit}
         </span>
       {/if}
 

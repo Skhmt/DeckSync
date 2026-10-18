@@ -1,4 +1,4 @@
-import type { MTGFormat, DeckCardItem, DeckVerificationLog, SavedDeckSession, VerificationToast } from '../types';
+import type { MTGFormat, DeckCardItem, DeckVerificationLog, SavedDeckSession, VerificationToast, LegalityStatus } from '../types';
 import { enrichDeckCards, CARD_TYPE_ORDER, getCardPrimaryType } from '../api/scryfall';
 import { parseDecklistText } from '../parser/decklist';
 import { importDeckFromUrl } from '../parser/urlImporter';
@@ -81,6 +81,74 @@ export class DeckState {
       return legality === 'banned';
     });
   });
+
+  /**
+   * True when the card's type line marks it as a basic land
+   * (e.g. "Basic Land — Plains", "Snow-Covered Basic Land — Mountain").
+   */
+  isBasicLand(card: DeckCardItem): boolean {
+    return /basic\s+land/i.test(card.scryfall?.type_line ?? '');
+  }
+
+  /**
+   * Scryfall legality of the card in the currently selected format.
+   * All supported MTGFormat values are valid Scryfall legality keys.
+   */
+  getFormatLegality(card: DeckCardItem): LegalityStatus | undefined {
+    return card.scryfall?.legalities?.[this.format];
+  }
+
+  /**
+   * Maximum number of copies of this card allowed in the current format,
+   * or null when unlimited (basic lands, sideboard cards).
+   * - Commander / Oathbreaker: one copy of each unique card (basic lands exempt)
+   * - 60-card formats: 4 copies of a non-land card in the main deck,
+   *   restricted cards limited to 1, basic lands unlimited, no per-card limit in the sideboard
+   */
+  getCopyLimit(card: DeckCardItem): number | null {
+    // Cards Scryfall couldn't resolve (tokens, proxies, custom) can't be validated
+    if (card.isCustomOrNotFound) return null;
+
+    // Basic lands are unlimited in every format
+    if (this.isBasicLand(card)) return null;
+
+    if (this.format === 'commander' || this.format === 'oathbreaker') {
+      return 1;
+    }
+
+    // 60-card formats: sideboards have no per-card copy limit
+    if (card.section === 'sideboard') return null;
+
+    // Restricted cards are limited to one copy (e.g. Ancestral Recall in Vintage)
+    if (this.getFormatLegality(card) === 'restricted') return 1;
+
+    return 4;
+  }
+
+  /**
+   * Cards whose listed count exceeds what the current format allows:
+   * duplicates in Commander, more than 4 of a card in 60-card formats,
+   * more than 1 copy of a restricted card, etc.
+   */
+  copyLimitViolations = $derived(
+    this.cards.filter(c => {
+      const limit = this.getCopyLimit(c);
+      return limit !== null && c.targetCount > limit;
+    })
+  );
+
+  /**
+   * Cards that can't be played in the current format at all: their set has
+   * rotated out of the format's pool, the set isn't allowed in the format,
+   * or the card is otherwise outside the format (e.g. non-common in Pauper).
+   * Scryfall reports these as `not_legal` for the format.
+   */
+  notLegalCards = $derived(
+    this.cards.filter(c => {
+      const legality = c.scryfall?.legalities?.[this.format];
+      return legality === 'not_legal';
+    })
+  );
 
   cardCountValidation = $derived.by(() => {
     const total = this.totalExpectedCards;

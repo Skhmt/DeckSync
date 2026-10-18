@@ -4,7 +4,9 @@
   import {
     banIconSvg,
     boltIconSvg,
+    calendarXmarkIconSvg,
     clockIconSvg,
+    cloneIconSvg,
     colorIcons,
     githubIconSvg,
     importIconSvg,
@@ -18,12 +20,16 @@
     onOpenHistory,
     onOpenBanned,
     onOpenGameChangers,
+    onOpenCopyLimit,
+    onOpenNotLegal,
   }: {
     headerHeight?: number;
     onOpenImport: () => void;
     onOpenHistory: () => void;
     onOpenBanned: () => void;
     onOpenGameChangers: () => void;
+    onOpenCopyLimit: () => void;
+    onOpenNotLegal: () => void;
   } = $props();
 
   const formats: { value: MTGFormat; label: string }[] = [
@@ -229,6 +235,30 @@
         >
           <span class="w-3.5 h-3.5 shrink-0">{@html banIconSvg}</span>
           {deckStore.bannedCards.length} Banned!
+        </button>
+      {/if}
+
+      <!-- Copy Limit Violations Alert -->
+      {#if deckStore.copyLimitViolations.length > 0}
+        <button
+          onclick={onOpenCopyLimit}
+          class="btn btn-error btn-xs sm:btn-sm gap-1"
+          title="Click to see cards with more copies than this format allows"
+        >
+          <span class="w-3.5 h-3.5 shrink-0">{@html cloneIconSvg}</span>
+          {deckStore.copyLimitViolations.length} Over Limit
+        </button>
+      {/if}
+
+      <!-- Not Legal in Format Alert (set rotation / illegal sets) -->
+      {#if deckStore.notLegalCards.length > 0}
+        <button
+          onclick={onOpenNotLegal}
+          class="btn btn-error btn-xs sm:btn-sm gap-1"
+          title="Click to see cards that are not legal in this format"
+        >
+          <span class="w-3.5 h-3.5 shrink-0">{@html calendarXmarkIconSvg}</span>
+          {deckStore.notLegalCards.length} Not Legal
         </button>
       {/if}
 

@@ -12,6 +12,8 @@ import arrowUpFromBracketIcon from "../assets/icons/arrow-up-from-bracket-solid-
 import floppyDiskIcon from "../assets/icons/floppy-disk-solid-full.svg?raw";
 import banIcon from "../assets/icons/ban-solid-full.svg?raw";
 import triangleExclamationIcon from "../assets/icons/triangle-exclamation-solid-full.svg?raw";
+import cloneIcon from "../assets/icons/clone-solid-full.svg?raw";
+import calendarXmarkIcon from "../assets/icons/calendar-xmark-solid-full.svg?raw";
 import boxArchiveIcon from "../assets/icons/box-archive-solid-full.svg?raw";
 import arrowDownAZIcon from "../assets/icons/arrow-down-a-z-solid-full.svg?raw";
 import listIcon from "../assets/icons/list-solid-full.svg?raw";
@@ -58,6 +60,8 @@ export const importIconSvg = inlineIcon(arrowUpFromBracketIcon); // arrow-up-fro
 export const saveLogIconSvg = inlineIcon(floppyDiskIcon); // floppy-disk
 export const banIconSvg = inlineIcon(banIcon); // ban
 export const warningIconSvg = inlineIcon(triangleExclamationIcon); // triangle-exclamation
+export const cloneIconSvg = inlineIcon(cloneIcon); // clone (stacked copies)
+export const calendarXmarkIconSvg = inlineIcon(calendarXmarkIcon); // calendar-xmark
 export const archiveIconSvg = inlineIcon(boxArchiveIcon); // box-archive
 export const sortAZIconSvg = inlineIcon(arrowDownAZIcon); // arrow-down-a-z
 export const listIconSvg = inlineIcon(listIcon); // list

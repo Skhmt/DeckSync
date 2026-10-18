@@ -8,6 +8,15 @@ export type MTGFormat =
   | 'pauper'
   | 'oathbreaker';
 
+/**
+ * Per-format legality values as reported by Scryfall.
+ * - legal: card may be played in the format
+ * - not_legal: card is outside the format's pool (set rotation, illegal sets, pauper rarity, etc.)
+ * - restricted: card is legal but limited to one copy per deck
+ * - banned: card may not be used in the format at all
+ */
+export type LegalityStatus = 'legal' | 'not_legal' | 'restricted' | 'banned';
+
 export interface CardFace {
   name: string;
   type_line?: string;
@@ -41,7 +50,7 @@ export interface ScryfallCard {
     art_crop?: string;
   };
   card_faces?: CardFace[];
-  legalities?: Record<string, 'legal' | 'not_legal' | 'restricted' | 'banned'>;
+  legalities?: Record<string, LegalityStatus>;
   rarity?: string;
   set?: string;
   collector_number?: string;

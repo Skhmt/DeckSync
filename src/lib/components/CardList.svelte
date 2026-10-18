@@ -81,6 +81,13 @@
                 card.verifiedCount > 0 && card.verifiedCount < card.targetCount}
               {@const isBanned =
                 card.scryfall?.legalities?.[deckStore.format] === "banned"}
+              {@const isNotLegal =
+                card.scryfall?.legalities?.[deckStore.format] === "not_legal"}
+              {@const copyLimit = deckStore.getCopyLimit(card)}
+              {@const isOverLimit =
+                copyLimit !== null && card.targetCount > copyLimit}
+              {@const hasLegalityIssue =
+                isBanned || isNotLegal || isOverLimit}
 
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -88,7 +95,7 @@
                 role="button"
                 tabindex="0"
                 onclick={() => handleRowClick(card)}
-                class="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 min-h-[48px] transition-colors cursor-pointer select-none active:bg-base-300/40 {isBanned
+                class="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 min-h-[48px] transition-colors cursor-pointer select-none active:bg-base-300/40 {hasLegalityIssue
                   ? 'bg-error/10 border-l-4 border-error'
                   : isVerified
                     ? 'bg-base-200/40 opacity-50 grayscale'
@@ -134,6 +141,20 @@
                         <span
                           class="badge badge-error badge-xs font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase"
                           >Banned</span
+                        >
+                      {/if}
+                      {#if isNotLegal}
+                        <span
+                          class="badge badge-error badge-xs font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase"
+                          title={`Card is not legal in ${deckStore.format}`}
+                          >Not Legal</span
+                        >
+                      {/if}
+                      {#if isOverLimit}
+                        <span
+                          class="badge badge-error badge-xs font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase"
+                          title={`${deckStore.format} allows max ${copyLimit} copies of this card`}
+                          >Max {copyLimit}</span
                         >
                       {/if}
                       {#if deckStore.isCommander && card.scryfall?.game_changer}
