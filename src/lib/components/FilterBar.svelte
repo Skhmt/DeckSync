@@ -106,7 +106,7 @@
           </li>
           <li>
             <button onclick={() => deckStore.uncheckAll()} class="text-xs text-error">
-              ✕ Reset Checklist (0)
+              ✕ Clear Checklist
             </button>
           </li>
         </ul>
