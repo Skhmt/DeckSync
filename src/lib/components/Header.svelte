@@ -1,6 +1,12 @@
 <script lang="ts">
   import { deckStore } from "../state/deck.svelte";
   import type { MTGFormat } from "../types";
+  // Font Awesome color identity icons (kept in /public, inlined at build so they can be recolored)
+  import sunIcon from "../../../public/sun-solid-full.svg?raw";
+  import dropletIcon from "../../../public/droplet-solid-full.svg?raw";
+  import skullIcon from "../../../public/skull-solid-full.svg?raw";
+  import fireIcon from "../../../public/fire-solid-full.svg?raw";
+  import treeIcon from "../../../public/tree-solid-full.svg?raw";
 
   let {
     headerHeight = $bindable(60),
@@ -27,15 +33,59 @@
     { value: "oathbreaker", label: "Oathbreaker" },
   ];
 
+  // Recolor the inlined SVGs (fill with currentColor) and scale them up so the glyph
+  // fills ~95% of the circle's interior like an MTG color pip. Each "solid full" icon
+  // has different built-in padding in its 640x640 viewBox, hence per-icon scales.
+  const iconSvg = (raw: string, scale: number) =>
+    raw.replace(
+      "<svg ",
+      `<svg fill="currentColor" width="100%" height="100%" style="transform:scale(${scale})" `
+    );
+
   const colorStyles: Record<
     string,
-    { bg: string; text: string; label: string }
+    { bg: string; text: string; ring: string; label: string }
   > = {
-    W: { bg: "bg-amber-100", text: "text-amber-900", label: "White" },
-    U: { bg: "bg-blue-500", text: "text-white", label: "Blue" },
-    B: { bg: "bg-neutral-800", text: "text-neutral-200", label: "Black" },
-    R: { bg: "bg-red-500", text: "text-white", label: "Red" },
-    G: { bg: "bg-emerald-600", text: "text-white", label: "Green" },
+    W: {
+      bg: "bg-amber-100",
+      text: "text-black",
+      ring: "ring-amber-700/60",
+      label: "White",
+    },
+    U: {
+      bg: "bg-blue-500",
+      text: "text-black",
+      ring: "ring-blue-300/80",
+      label: "Blue",
+    },
+    B: {
+      bg: "bg-neutral-500",
+      text: "text-black",
+      ring: "ring-neutral-500/80",
+      label: "Black",
+    },
+    R: {
+      bg: "bg-red-500",
+      text: "text-black",
+      ring: "ring-red-300/80",
+      label: "Red",
+    },
+    G: {
+      bg: "bg-emerald-600",
+      text: "text-black",
+      ring: "ring-emerald-300/80",
+      label: "Green",
+    },
+  };
+
+  // MTG color identity icons: W=sun, U=droplet, B=skull, R=fire, G=tree
+  // Scales compensate for each glyph's viewBox padding so all pips fill the circle evenly
+  const colorIcons: Record<string, string> = {
+    W: iconSvg(sunIcon, 1.06), // sun spans ~90% of its viewBox
+    U: iconSvg(dropletIcon, 1.15), // droplet is tall (~82%)
+    B: iconSvg(skullIcon, 1.19), // skull spans ~80%
+    R: iconSvg(fireIcon, 1.13), // flame is ~84% tall
+    G: iconSvg(treeIcon, 1.06), // tree spans ~90%
   };
 
   let isLoggingSuccess = $state(false);
@@ -157,13 +207,10 @@
         >
           {#each deckStore.deckColorIdentity as color}
             <span
-              class="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center font-bold text-[10px] sm:text-xs shadow-xs {colorStyles[
-                color
-              ]?.bg || 'bg-base-300'} {colorStyles[color]?.text ||
-                'text-base-content'}"
+              class="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shadow-xs ring-1 {colorStyles[color]?.bg || 'bg-base-300'} {colorStyles[color]?.text || 'text-base-content'} {colorStyles[color]?.ring || 'ring-base-400'}"
               title={colorStyles[color]?.label || color}
             >
-              {color}
+              {@html colorIcons[color] ?? ""}
             </span>
           {/each}
         </div>
