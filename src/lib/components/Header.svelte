@@ -1,12 +1,7 @@
 <script lang="ts">
   import { deckStore } from "../state/deck.svelte";
   import type { MTGFormat } from "../types";
-  // Font Awesome color identity icons (kept in /public, inlined at build so they can be recolored)
-  import sunIcon from "../../../public/sun-solid-full.svg?raw";
-  import dropletIcon from "../../../public/droplet-solid-full.svg?raw";
-  import skullIcon from "../../../public/skull-solid-full.svg?raw";
-  import fireIcon from "../../../public/fire-solid-full.svg?raw";
-  import treeIcon from "../../../public/tree-solid-full.svg?raw";
+  import { boltIconSvg, colorIcons } from "../icons";
 
   let {
     headerHeight = $bindable(60),
@@ -32,15 +27,6 @@
     { value: "pauper", label: "Pauper" },
     { value: "oathbreaker", label: "Oathbreaker" },
   ];
-
-  // Recolor the inlined SVGs (fill with currentColor) and scale them up so the glyph
-  // fills ~95% of the circle's interior like an MTG color pip. Each "solid full" icon
-  // has different built-in padding in its 640x640 viewBox, hence per-icon scales.
-  const iconSvg = (raw: string, scale: number) =>
-    raw.replace(
-      "<svg ",
-      `<svg fill="currentColor" width="100%" height="100%" style="transform:scale(${scale})" `
-    );
 
   const colorStyles: Record<
     string,
@@ -76,16 +62,6 @@
       ring: "ring-emerald-300/80",
       label: "Green",
     },
-  };
-
-  // MTG color identity icons: W=sun, U=droplet, B=skull, R=fire, G=tree
-  // Scales compensate for each glyph's viewBox padding so all pips fill the circle evenly
-  const colorIcons: Record<string, string> = {
-    W: iconSvg(sunIcon, 1.06), // sun spans ~90% of its viewBox
-    U: iconSvg(dropletIcon, 1.15), // droplet is tall (~82%)
-    B: iconSvg(skullIcon, 1.19), // skull spans ~80%
-    R: iconSvg(fireIcon, 1.13), // flame is ~84% tall
-    G: iconSvg(treeIcon, 1.06), // tree spans ~90%
   };
 
   let isLoggingSuccess = $state(false);
@@ -223,11 +199,9 @@
           class="badge badge-warning badge-xs sm:badge-sm md:badge-md gap-1 font-semibold shadow-xs cursor-pointer hover:brightness-90 active:scale-95 transition-all duration-150"
           title="Click to see game changers in this deck"
         >
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
-            />
-          </svg>
+          <span class="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 text-neutral-900"
+            >{@html boltIconSvg}</span
+          >
           <span>{deckStore.gameChangerCount} <span class="hidden sm:inline">Game Changer{deckStore.gameChangerCount === 1 ? "" : "s"}</span><span class="sm:hidden">GC</span></span>
         </button>
       {/if}

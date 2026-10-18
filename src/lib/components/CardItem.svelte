@@ -2,6 +2,7 @@
   import type { DeckCardItem } from "../types";
   import { deckStore } from "../state/deck.svelte";
   import { getCardImageUrl } from "../api/scryfall";
+  import { boltIconSvg } from "../icons";
 
   let { card }: { card: DeckCardItem } = $props();
 
@@ -128,10 +129,11 @@
 
       {#if deckStore.isCommander && card.scryfall?.game_changer}
         <span
-          class="badge badge-warning badge-xs font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)]"
+          class="badge badge-warning badge-xs font-bold gap-1 ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)]"
           title="Scryfall Game Changer"
         >
-          ⚡ GC
+          <span class="w-3 h-3 shrink-0 text-neutral-900">{@html boltIconSvg}</span>
+          GC
         </span>
       {/if}
 

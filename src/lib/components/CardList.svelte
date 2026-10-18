@@ -1,6 +1,7 @@
 <script lang="ts">
   import { deckStore } from "../state/deck.svelte";
   import type { DeckCardItem } from "../types";
+  import { boltIconSvg } from "../icons";
 
   function handleRowClick(card: DeckCardItem) {
     deckStore.toggleCard(card.id);
@@ -160,9 +161,12 @@
                         >
                       {/if}
                       {#if deckStore.isCommander && card.scryfall?.game_changer}
-                        <span class="badge badge-warning badge-xs font-bold"
-                          >⚡ GC</span
+                        <span
+                          class="badge badge-warning badge-xs font-bold gap-1"
                         >
+                          <span class="w-3 h-3 shrink-0 text-neutral-900">{@html boltIconSvg}</span>
+                          GC
+                        </span>
                       {/if}
                     </div>
                     <div

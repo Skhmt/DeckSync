@@ -1,5 +1,6 @@
 <script lang="ts">
   import { deckStore } from '../state/deck.svelte';
+  import { boltIconSvg } from '../icons';
 
   let { isOpen, onClose }: { isOpen: boolean; onClose: () => void } = $props();
 </script>
@@ -9,8 +10,8 @@
     <div class="modal-box max-w-lg bg-base-100 border border-warning/30 shadow-2xl p-4 sm:p-6 w-full max-h-[92dvh] flex flex-col">
       <div class="flex items-center justify-between pb-3 border-b border-base-300">
         <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-full bg-warning text-warning-content flex items-center justify-center font-bold">
-            ⚡
+          <div class="w-8 h-8 rounded-full bg-warning flex items-center justify-center">
+            <span class="w-5 h-5 text-neutral-900">{@html boltIconSvg}</span>
           </div>
           <div>
             <h3 class="font-bold text-lg text-base-content">Game Changers</h3>
