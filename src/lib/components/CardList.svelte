@@ -99,11 +99,13 @@
                 role="button"
                 tabindex="0"
                 onclick={() => handleRowClick(card)}
-                class="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 min-h-[48px] transition-colors cursor-pointer select-none active:bg-base-300/40 {isVerified
-                  ? 'bg-base-200/40 opacity-50 grayscale'
-                  : isPartiallyVerified
-                    ? 'bg-warning/5 hover:bg-warning/10'
-                    : 'hover:bg-base-200/70'}"
+                class="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 min-h-[48px] transition-colors cursor-pointer select-none active:bg-base-300/40 {isBanned
+                  ? 'bg-error/10 border-l-4 border-error'
+                  : isVerified
+                    ? 'bg-base-200/40 opacity-50 grayscale'
+                    : isPartiallyVerified
+                      ? 'bg-warning/5 hover:bg-warning/10'
+                      : 'hover:bg-base-200/70'}"
               >
                 <!-- Left: Checkbox & Name & Badges -->
                 <div class="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
@@ -153,11 +155,11 @@
                       </span>
                       {#if isBanned}
                         <span
-                          class="badge badge-error badge-xs font-bold uppercase"
+                          class="badge badge-error badge-xs font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase"
                           >Banned</span
                         >
                       {/if}
-                      {#if card.scryfall?.game_changer}
+                      {#if deckStore.isCommander && card.scryfall?.game_changer}
                         <span class="badge badge-warning badge-xs font-bold"
                           >⚡ GC</span
                         >

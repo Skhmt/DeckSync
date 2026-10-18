@@ -167,8 +167,8 @@
         </div>
       {/if}
 
-      <!-- Game Changer Count Badge -->
-      {#if deckStore.gameChangerCount > 0}
+      <!-- Game Changer Count Badge (Commander / EDH only) -->
+      {#if deckStore.isCommander && deckStore.gameChangerCount > 0}
         <div
           class="badge badge-warning badge-xs sm:badge-sm md:badge-md gap-1 font-semibold shadow-xs"
           title="Cards flagged as game changers by Scryfall"

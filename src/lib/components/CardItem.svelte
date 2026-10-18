@@ -48,11 +48,13 @@
   role="button"
   tabindex="0"
   onclick={handleCardClick}
-  class="relative rounded-2xl overflow-hidden shadow-md group transition-all duration-200 cursor-pointer select-none border-2 active:scale-[0.98] {isVerified
-    ? 'border-success/50 card-verified'
-    : isPartiallyVerified
-      ? 'border-warning'
-      : 'border-transparent card-unverified hover:shadow-xl hover:scale-[1.02]'}"
+  class="relative rounded-2xl overflow-hidden shadow-md group transition-all duration-200 cursor-pointer select-none border-2 active:scale-[0.98] {isBanned
+    ? 'border-error hover:shadow-xl hover:scale-[1.02]'
+    : isVerified
+      ? 'border-success/50 card-verified'
+      : isPartiallyVerified
+        ? 'border-warning'
+        : 'border-transparent card-unverified hover:shadow-xl hover:scale-[1.02]'}"
 >
   <!-- Card Image or Fallback Container -->
   <div
@@ -109,19 +111,24 @@
       </div>
     {/if}
 
+    <!-- Light red tint overlay for banned cards (sits below z-10 badges) -->
+    {#if isBanned}
+      <div class="absolute inset-0 bg-error/20 pointer-events-none"></div>
+    {/if}
+
     <!-- Top Right: Banned & Game Changer Badges & Flip Button -->
     <div class="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 flex flex-col items-end gap-1 sm:gap-1.5">
       {#if isBanned}
         <span
-          class="badge badge-error badge-xs sm:badge-sm font-bold shadow-md uppercase tracking-wider"
+          class="badge badge-error badge-xs sm:badge-sm font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)] uppercase tracking-wider"
         >
           Banned
         </span>
       {/if}
 
-      {#if card.scryfall?.game_changer}
+      {#if deckStore.isCommander && card.scryfall?.game_changer}
         <span
-          class="badge badge-warning badge-xs font-bold shadow-md"
+          class="badge badge-warning badge-xs font-bold ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)]"
           title="Scryfall Game Changer"
         >
           ⚡ GC
