@@ -87,3 +87,10 @@ export interface SavedDeckSession {
   checkedStatus: Record<string, number>;
 }
 
+export interface VerificationToast {
+  cardId: string;
+  cardName: string;
+  previousCount: number;
+  action: 'found' | 'unfound';
+}
+

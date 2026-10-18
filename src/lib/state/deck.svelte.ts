@@ -1,4 +1,4 @@
-import type { MTGFormat, DeckCardItem, DeckVerificationLog, SavedDeckSession } from '../types';
+import type { MTGFormat, DeckCardItem, DeckVerificationLog, SavedDeckSession, VerificationToast } from '../types';
 import { enrichDeckCards, CARD_TYPE_ORDER, getCardPrimaryType } from '../api/scryfall';
 import { parseDecklistText } from '../parser/decklist';
 import { importDeckFromUrl } from '../parser/urlImporter';
@@ -16,6 +16,9 @@ export class DeckState {
   groupByType = $state<boolean>(true);
   filterMode = $state<'all' | 'not_found' | 'found'>('all');
   searchQuery = $state<string>('');
+
+  // Undo toast for cards verified in the "not found" view or removed in the "found" view
+  verificationToast = $state<VerificationToast | null>(null);
 
   // Loading states
   isLoading = $state<boolean>(false);
@@ -243,6 +246,9 @@ export class DeckState {
     const card = this.cards.find(c => c.id === id);
     if (!card) return;
 
+    const previousCount = card.verifiedCount;
+    const wasVerified = previousCount >= card.targetCount;
+
     if (card.targetCount > 1) {
       // Multiple copies (e.g. basic lands): toggle between 0 and targetCount
       if (card.verifiedCount >= card.targetCount) {
@@ -254,7 +260,44 @@ export class DeckState {
       // Single copy: toggle 0 and 1
       card.verifiedCount = card.verifiedCount > 0 ? 0 : 1;
     }
+
+    const isNowVerified = card.verifiedCount >= card.targetCount;
+
+    // In the "not found" view a tap marks the card as found, and in the "found"
+    // view it removes it — surface both with an undo toast in case of misclicks
+    if (this.filterMode === 'not_found' && !wasVerified && isNowVerified) {
+      this.verificationToast = {
+        cardId: card.id,
+        cardName: card.name,
+        previousCount,
+        action: 'found'
+      };
+    } else if (this.filterMode === 'found' && wasVerified && !isNowVerified) {
+      this.verificationToast = {
+        cardId: card.id,
+        cardName: card.name,
+        previousCount,
+        action: 'unfound'
+      };
+    }
+
     this.persistSession();
+  }
+
+  // Verification-toast actions
+  undoVerificationToast(): void {
+    const toast = this.verificationToast;
+    if (!toast) return;
+    const card = this.cards.find(c => c.id === toast.cardId);
+    if (card) {
+      card.verifiedCount = toast.previousCount;
+    }
+    this.verificationToast = null;
+    this.persistSession();
+  }
+
+  dismissVerificationToast(): void {
+    this.verificationToast = null;
   }
 
   unverifyCard(id: string): void {

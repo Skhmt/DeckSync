@@ -11,8 +11,8 @@
 
   const filterOptions: { id: 'all' | 'not_found' | 'found'; label: string; shortLabel: string; count?: number }[] = $derived([
     { id: 'all', label: 'Full Deck', shortLabel: 'All', count: deckStore.totalExpectedCards },
-    { id: 'not_found', label: 'Only Not Found', shortLabel: 'Missing', count: deckStore.totalExpectedCards - deckStore.totalVerifiedCards },
-    { id: 'found', label: 'Only Found', shortLabel: 'Found', count: deckStore.totalVerifiedCards }
+    { id: 'not_found', label: 'Not Found', shortLabel: 'Missing', count: deckStore.totalExpectedCards - deckStore.totalVerifiedCards },
+    { id: 'found', label: 'Found', shortLabel: 'Found', count: deckStore.totalVerifiedCards }
   ]);
 </script>
 
@@ -22,7 +22,7 @@
   style="top: {headerHeight}px;"
 >
   <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-3">
-    <!-- View Filters: Full Deck / Only Not Found / Only Found -->
+    <!-- View Filters: Full Deck / Not Found / Found -->
     <div class="w-full md:w-auto">
       <div class="join bg-base-100 p-0.5 rounded-lg border border-base-300 shadow-xs w-full sm:w-auto grid grid-cols-3 sm:flex">
         {#each filterOptions as opt}

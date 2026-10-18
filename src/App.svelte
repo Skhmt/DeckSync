@@ -8,6 +8,7 @@
   import ImportModal from './lib/components/ImportModal.svelte';
   import HistoryModal from './lib/components/HistoryModal.svelte';
   import BannedModal from './lib/components/BannedModal.svelte';
+  import VerificationToast from './lib/components/VerificationToast.svelte';
   import CategoryNav from './lib/components/CategoryNav.svelte';
 
   let isImportOpen = $state(false);
@@ -109,4 +110,7 @@
   <ImportModal isOpen={isImportOpen} onClose={() => isImportOpen = false} />
   <HistoryModal isOpen={isHistoryOpen} onClose={() => isHistoryOpen = false} />
   <BannedModal isOpen={isBannedOpen} onClose={() => isBannedOpen = false} />
+
+  <!-- Bottom toast with undo when a card is verified or removed in the filtered views -->
+  <VerificationToast />
 </div>
