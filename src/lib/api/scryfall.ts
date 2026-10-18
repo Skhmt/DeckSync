@@ -2,13 +2,23 @@ import type { ScryfallCard, DeckCardItem } from '../types';
 import { getCachedCard, cacheCards } from '../storage/db';
 
 const SCRYFALL_COLLECTION_URL = 'https://api.scryfall.com/cards/collection';
+const SCRYFALL_SEARCH_URL = 'https://api.scryfall.com/cards/search';
 const BATCH_SIZE = 75;
+const PRINT_BATCH_SIZE = 10;
+const PRINT_PAGE_SIZE = 30;
+const MAX_PRINT_PAGES = 3;
 const RATE_LIMIT_DELAY_MS = 100;
 
 interface ScryfallCollectionResponse {
   object: string;
   not_found?: Array<{ name?: string; id?: string }>;
   data?: ScryfallCard[];
+}
+
+interface ScryfallSearchResponse {
+  object: string;
+  data?: ScryfallCard[];
+  has_more?: boolean;
 }
 
 /**
@@ -213,12 +223,106 @@ export async function enrichDeckCards(
     }
   }
 
-  // 3. Save newly fetched cards to IndexedDB cache
+  // 3. Fetch specific printings (set code + collector number) requested by the decklist,
+  //    so card images match the exact printing listed. If a printing can't be found
+  //    (e.g. invalid set), no entry is added and the name-resolved default card above
+  //    is used instead (current behavior).
+  const printMap = new Map<string, ScryfallCard>();
+  const printRequests: Array<{ name: string; setCode: string; collectorNumber: string }> = [];
+  const seenPrintKeys = new Set<string>();
+
+  for (const item of deckCards) {
+    if (!item.setCode || !item.collectorNumber) continue;
+    const setCode = item.setCode.toLowerCase();
+    const collectorNumber = String(item.collectorNumber);
+    const key = `${item.name.toLowerCase().trim()}::${setCode}::${collectorNumber}`;
+    if (seenPrintKeys.has(key)) continue;
+    seenPrintKeys.add(key);
+
+    // Skip when the name lookup already resolved to this exact printing
+    const defaultCard = cardMap.get(item.name.toLowerCase().trim());
+    if (defaultCard && defaultCard.set === setCode && String(defaultCard.collector_number ?? '') === collectorNumber) {
+      continue;
+    }
+
+    printRequests.push({ name: item.name, setCode, collectorNumber });
+  }
+
+  for (let i = 0; i < printRequests.length; i += PRINT_BATCH_SIZE) {
+    const batch = printRequests.slice(i, i + PRINT_BATCH_SIZE);
+    // One OR clause per requested printing: exact name within the requested set.
+    // Parentheses keep boolean precedence unambiguous; unknown sets simply match
+    // nothing, so they don't affect the other clauses (fallback stays intact).
+    // unique=prints is required so all matching printings are returned (the default
+    // dedupes to a single representative printing per card).
+    const q = batch
+      .map(r => `(name:"${r.name.replace(/"/g, '')}" set:${r.setCode})`)
+      .join(' OR ');
+
+    try {
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && page <= MAX_PRINT_PAGES) {
+        const url = `${SCRYFALL_SEARCH_URL}?q=${encodeURIComponent(q)}&page_size=${PRINT_PAGE_SIZE}&unique=prints&page=${page}`;
+        const response = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'DeckSync/1.0'
+          }
+        });
+
+        if (!response.ok) {
+          console.warn(`Scryfall printing search returned status ${response.status}`);
+          break;
+        }
+
+        const json: ScryfallSearchResponse = await response.json();
+        for (const card of json.data ?? []) {
+          // Normalize game_changer boolean flag
+          card.game_changer = Boolean(card.game_changer || card['game-changer']);
+        }
+
+        // Match each requested printing against the results by set + collector number
+        for (const req of batch) {
+          const lowerName = req.name.toLowerCase().trim();
+          const key = `${lowerName}::${req.setCode}::${req.collectorNumber}`;
+          if (printMap.has(key)) continue;
+
+          const match = (json.data ?? []).find(c => {
+            if (String(c.set ?? '').toLowerCase() !== req.setCode) return false;
+            if (String(c.collector_number ?? '') !== req.collectorNumber) return false;
+            const cardName = c.name.toLowerCase().trim();
+            // Exact name, or the decklist only lists the front face of a double-faced card
+            return cardName === lowerName || cardName.startsWith(lowerName + ' /') || cardName.startsWith(lowerName + ' //');
+          });
+
+          if (match) {
+            printMap.set(key, match);
+          }
+        }
+
+        hasMore = Boolean(json.has_more);
+        page++;
+      }
+    } catch (err) {
+      console.error('Failed to fetch Scryfall printing batch:', err);
+    }
+
+    // Rate-limit pause if there are more batches
+    if (i + PRINT_BATCH_SIZE < printRequests.length) {
+      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+    }
+  }
+
+  // 4. Save newly fetched cards to IndexedDB cache
+  //    (specific printing cards are intentionally NOT cached: the cache is keyed by
+  //    card name and stores the default printing, so caching a specific set's art
+  //    would change images for future decks that don't specify a set)
   if (newlyFetched.length > 0) {
     await cacheCards(newlyFetched);
   }
 
-  // 4. Attach Scryfall card data to deck items
+  // 5. Attach Scryfall card data to deck items
   return deckCards.map(item => {
     const lowerName = item.name.toLowerCase().trim();
     let foundCard = cardMap.get(lowerName) || cardMap.get(item.rawName.toLowerCase().trim());
@@ -226,6 +330,16 @@ export async function enrichDeckCards(
     if (!foundCard) {
       const base = lowerName.split('/')[0].replace(/[-–—]?\s*\d+.*$/, '').trim();
       foundCard = cardMap.get(base);
+    }
+
+    // Prefer the exact printing (set + collector number) specified in the decklist;
+    // if that printing wasn't found (e.g. invalid set), keep the default name-resolved card
+    if (item.setCode && item.collectorNumber) {
+      const printKey = `${lowerName}::${item.setCode.toLowerCase()}::${String(item.collectorNumber)}`;
+      const specificCard = printMap.get(printKey);
+      if (specificCard) {
+        foundCard = specificCard;
+      }
     }
 
     if (foundCard) {
