@@ -156,7 +156,7 @@
               <li><strong>TappedOut:</strong> <code>tappedout.net/mtg-decks/&lt;slug&gt;</code></li>
             </ul>
             <p class="text-[11px] text-base-content/50 pt-1">
-              Note: DeckSync uses CORS proxies to fetch public deck data. If a provider blocks third-party proxies, simply use their export button to copy and paste the text list.
+              Note: DeckSync fetches public deck data through reader proxies, so imports can take a few seconds. If every proxy is blocked by the provider, use its export button to copy and paste the text list instead.
             </p>
           </div>
         </div>

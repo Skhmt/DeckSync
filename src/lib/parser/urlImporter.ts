@@ -5,82 +5,54 @@ export interface UrlImportOptions {
   corsProxy?: boolean;
 }
 
-// Resilient public CORS proxy resolvers
-const PROXY_RESOLVERS: Array<{ name: string; getUrl: (u: string) => string; extract?: (data: any) => string }> = [
+interface FetchSource {
+  name: string;
+  buildUrl: (url: string) => string;
+  /** Convert the raw response body into the target content. Throw to reject this source. */
+  extract?: (raw: string) => string;
+}
+
+// Proxy sources raced in parallel for cross-origin fetches. Order only affects
+// which error we keep if everything fails — the first *valid* response wins.
+//
+// jina-reader (r.jina.ai) is the most reliable source for Cloudflare-protected
+// deck APIs (Moxfield, Archidekt): it echoes the requesting origin in
+// Access-Control-Allow-Origin and returns the full response body wrapped in a
+// small text envelope ("Title: ... / URL Source: ... / Markdown Content:\n...").
+const JINA_CONTENT_MARKER = 'Markdown Content:\n';
+
+const PROXY_SOURCES: FetchSource[] = [
   {
-    name: 'cors.lol',
-    getUrl: (url: string) => `https://cors.lol/?${encodeURIComponent(url)}`
+    name: 'jina-reader',
+    buildUrl: (url: string) => `https://r.jina.ai/${url}`,
+    extract: (raw: string): string => {
+      const idx = raw.indexOf(JINA_CONTENT_MARKER);
+      return idx >= 0 ? raw.slice(idx + JINA_CONTENT_MARKER.length) : raw;
+    }
   },
   {
     name: 'allorigins-raw',
-    getUrl: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-  },
-  {
-    name: 'allorigins-get',
-    getUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    extract: (data: any) => typeof data === 'string' ? JSON.parse(data).contents : data.contents
+    buildUrl: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
   },
   {
     name: 'codetabs',
-    getUrl: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+    buildUrl: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+  },
+  {
+    name: 'allorigins-json',
+    buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    extract: (raw: string): string => JSON.parse(raw).contents
+  },
+  {
+    // Only works if the user previously opted in on cors-anywhere.com, but it is
+    // harmless to race alongside the others.
+    name: 'cors-anywhere',
+    buildUrl: (url: string) => `https://cors-anywhere.com/${encodeURIComponent(url)}`
   }
 ];
 
-async function fetchWithFallback(url: string, timeoutMs = 7000): Promise<string> {
-  // 1. First attempt direct fetch
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'Accept': 'application/json, text/plain, */*'
-      },
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-    if (res.ok) {
-      const text = await res.text();
-      // Verify response isn't a Cloudflare block page
-      if (!isCloudflareChallenge(text)) {
-        return text;
-      }
-    }
-  } catch (directErr) {
-    // Direct fetch failed (likely browser CORS block), continue to proxies
-  }
-
-  // 2. Try each configured CORS proxy
-  let lastError: string = 'Network request failed';
-
-  for (const proxy of PROXY_RESOLVERS) {
-    try {
-      const proxyUrl = proxy.getUrl(url);
-      const res = await fetch(proxyUrl, {
-        headers: {
-          'Accept': 'application/json, text/plain, */*'
-        },
-        signal: AbortSignal.timeout(timeoutMs)
-      });
-
-      if (res.ok) {
-        let content: string;
-        if (proxy.extract) {
-          const raw = await res.text();
-          content = proxy.extract(raw);
-        } else {
-          content = await res.text();
-        }
-
-        if (content && !isCloudflareChallenge(content)) {
-          return content;
-        }
-      }
-    } catch (err: any) {
-      lastError = err?.message || 'CORS proxy error';
-    }
-  }
-
-  throw new Error(
-    `Unable to load deck from this URL directly (deck sites often block cross-origin requests). Please open your deck in Moxfield/Archidekt, copy the export text, and paste it into the "Paste Decklist" tab instead.`
-  );
-}
+const DIRECT_TIMEOUT_MS = 8000;
+const PROXY_TIMEOUT_MS = 30000;
 
 function isCloudflareChallenge(text: string): boolean {
   if (typeof text !== 'string') return false;
@@ -89,6 +61,106 @@ function isCloudflareChallenge(text: string): boolean {
     text.includes('Attention Required! | Cloudflare') ||
     text.includes('cf-browser-verification') ||
     text.includes('Checking your browser before accessing')
+  );
+}
+
+function looksLikeJson(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith('{') || t.startsWith('[');
+}
+
+async function fetchFromSource(
+  source: FetchSource,
+  url: string,
+  timeoutMs: number,
+  expectJson: boolean
+): Promise<string> {
+  const res = await fetch(source.buildUrl(url), {
+    headers: { Accept: 'application/json, text/plain, */*' },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+
+  if (!res.ok) throw new Error(`${source.name} returned HTTP ${res.status}`);
+
+  let content = await res.text();
+  if (source.extract) content = source.extract(content);
+
+  if (!content || isCloudflareChallenge(content)) {
+    throw new Error(`${source.name} was blocked or returned an empty response`);
+  }
+  if (expectJson && !looksLikeJson(content)) {
+    // e.g. a reader-proxy error page instead of the real payload — let another source win
+    throw new Error(`${source.name} returned non-JSON content`);
+  }
+  return content;
+}
+
+/** Resolves with the first fulfilled value, rejects only when every promise fails. */
+function firstSuccess(promises: Promise<string>[]): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let pending = promises.length;
+    let lastError: unknown = new Error('All fetch sources failed');
+    if (pending === 0) {
+      reject(lastError);
+      return;
+    }
+    for (const promise of promises) {
+      promise.then(
+        (value) => resolve(value),
+        (error) => {
+          lastError = error;
+          if (--pending === 0) reject(lastError);
+        }
+      );
+    }
+  });
+}
+
+/**
+ * Fetches a URL from the browser, working around CORS restrictions:
+ * 1. Try a direct fetch first (fast path for sites that allow cross-origin reads).
+ * 2. Race a pool of public reader proxies in parallel; the first valid response wins.
+ *
+ * Deck sites such as Moxfield and Archidekt do not send permissive CORS headers,
+ * so step 2 is what actually makes URL imports work for them.
+ */
+export async function fetchWithFallback(
+  url: string,
+  options: { expectJson?: boolean } = {}
+): Promise<string> {
+  const { expectJson = false } = options;
+
+  // 1. Fast path: direct fetch (fails instantly in the browser when CORS blocks it)
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json, text/plain, */*' },
+      signal: AbortSignal.timeout(DIRECT_TIMEOUT_MS)
+    });
+    if (res.ok) {
+      const text = await res.text();
+      if (!isCloudflareChallenge(text) && !(expectJson && !looksLikeJson(text))) {
+        return text;
+      }
+    }
+  } catch {
+    // Direct fetch failed (likely a browser CORS block), continue to proxies.
+  }
+
+  // 2. Race all proxy sources in parallel — first valid response wins
+  try {
+    return await firstSuccess(
+      PROXY_SOURCES.map((source) =>
+        fetchFromSource(source, url, PROXY_TIMEOUT_MS, expectJson).catch((err: unknown) => {
+          throw err instanceof Error ? err : new Error(String(err));
+        })
+      )
+    );
+  } catch {
+    // Every source failed — fall through to the final error below.
+  }
+
+  throw new Error(
+    'Unable to load this deck: the site blocks cross-origin requests and all proxy routes were blocked or timed out. Please open the deck in Moxfield/Archidekt, use its export/copy button, and paste the list into the "Paste Decklist" tab instead.'
   );
 }
 
@@ -101,7 +173,7 @@ async function importFromMoxfield(url: string): Promise<ParsedDeckResult> {
   const deckId = match[1];
 
   const apiUrl = `https://api.moxfield.com/v2/decks/all/${deckId}`;
-  const jsonText = await fetchWithFallback(apiUrl);
+  const jsonText = await fetchWithFallback(apiUrl, { expectJson: true });
   let data: any;
   try {
     data = JSON.parse(jsonText);
@@ -156,7 +228,7 @@ async function importFromArchidekt(url: string): Promise<ParsedDeckResult> {
   const deckId = match[1];
 
   const apiUrl = `https://archidekt.com/api/decks/${deckId}/`;
-  const jsonText = await fetchWithFallback(apiUrl);
+  const jsonText = await fetchWithFallback(apiUrl, { expectJson: true });
   let data: any;
   try {
     data = JSON.parse(jsonText);
@@ -167,6 +239,21 @@ async function importFromArchidekt(url: string): Promise<ParsedDeckResult> {
   const deckName = data.name || 'Archidekt Deck';
   const cards: DeckCardItem[] = [];
 
+  // Categories the deck owner marked as "not in deck" (e.g. the built-in Maybeboard,
+  // whose default is includedInDeck: false). Cards tagged with any of these are not
+  // part of the playable decklist and must be skipped.
+  const excludedCategories = new Set<string>();
+  if (Array.isArray(data.categories) && data.categories.length > 0) {
+    for (const cat of data.categories) {
+      if (cat && typeof cat.name === 'string' && cat.includedInDeck === false) {
+        excludedCategories.add(cat.name.toLowerCase());
+      }
+    }
+  } else {
+    // Fallback when the API omits category metadata: Maybeboard is not in the deck by default.
+    excludedCategories.add('maybeboard');
+  }
+
   if (Array.isArray(data.cards)) {
     for (const item of data.cards) {
       const cardName = item.card?.oracleCard?.name || item.card?.name;
@@ -174,6 +261,9 @@ async function importFromArchidekt(url: string): Promise<ParsedDeckResult> {
 
       const count = item.quantity || 1;
       const categories: string[] = Array.isArray(item.categories) ? item.categories.map((c: any) => String(c).toLowerCase()) : [];
+
+      // Skip cards in "not in deck" categories (Maybeboard, custom excluded categories, ...)
+      if (categories.some(c => excludedCategories.has(c))) continue;
 
       let section: DeckCardItem['section'] = 'mainboard';
       if (categories.some(c => c.includes('commander'))) {
