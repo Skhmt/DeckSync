@@ -12,7 +12,7 @@
     recognizeSetRegion
   } from '../ocr/cardScanner';
   import type { SetCodeParse } from '../ocr/parse';
-  import type { CardScanOutcome, ScryfallCard } from '../types';
+  import type { CardScanOutcome, DeckCardItem, ScryfallCard } from '../types';
   import { cameraIconSvg, checkIconSvg, warningIconSvg, xmarkIconSvg } from '../icons';
 
   let { isOpen, onClose }: { isOpen: boolean; onClose: () => void } = $props();
@@ -46,18 +46,19 @@
   // or until a couple of attempts read nothing (i.e. the card moved away).
   const HIT_COOLDOWN_MS = 8000;
   const REARM_AFTER_MISSES = 2;
-  const BANNER_DURATION_MS = 2500;
 
   type ScanMode = 'snap' | 'continuous';
   let scanMode = $state<ScanMode>('snap');
 
-  // Transient "found" banner shown over the live video in continuous mode
-  interface FoundBanner {
-    kind: 'found' | 'not_in_deck';
-    name: string;
-    detail?: string;
+  // Continuous mode: a card was identified and is awaiting the user's decision.
+  // The camera keeps running behind it — if a different card is found, this is
+  // replaced automatically (the old modal goes away on its own).
+  interface PendingHit {
+    key: string;
+    card: ScryfallCard;
+    deckCard: DeckCardItem | null;
   }
-  let foundBanner = $state<FoundBanner | null>(null);
+  let pendingHit = $state<PendingHit | null>(null);
   // True while a continuous attempt is OCR-ing / looking up (drives the status)
   let continuousBusy = $state(false);
 
@@ -65,7 +66,6 @@
   let lastHitKey = '';
   let lastHitAt = 0;
   let missesSinceHit = 0;
-  let bannerTimer: ReturnType<typeof setTimeout> | undefined;
 
   const foundCard = $derived(outcome?.card ?? null);
   const foundDeckCard = $derived(outcome?.deckCard ?? null);
@@ -84,7 +84,7 @@
 
     outcome = null;
     cameraError = '';
-    foundBanner = null;
+    pendingHit = null;
     openCamera();
 
     // Warm up the OCR engine in the background so the first scan is snappy
@@ -201,7 +201,7 @@
     }
   }
 
-  /** A card was identified in continuous mode: dedup, then notify + auto-verify. */
+  /** A card was identified in continuous mode: dedup, then pop the confirm modal. */
   function handleContinuousHit(card: ScryfallCard) {
     const key = card.id || `${card.name}|${card.set ?? ''}`;
     const now = Date.now();
@@ -210,30 +210,38 @@
     lastHitAt = now;
     missesSinceHit = 0;
 
+    // A confirmation is already up for this exact card — keep showing it
+    if (pendingHit?.key === key) return;
+
+    // A different card was found: replace the pending confirmation (if any),
+    // which dismisses the previous modal automatically.
     const deckCard = matchDeckCard(deckStore.cards, card) ?? null;
-    if (deckCard) {
-      // Same path as tapping "Accept" in snap mode — records the capture and
-      // surfaces the shared undo toast so a mis-OCR can be reverted.
-      deckStore.recordCameraScan(deckCard.id);
-      buzz(80);
-      showFoundBanner({
-        kind: 'found',
-        name: card.name,
-        detail: `${deckCard.verifiedCount} of ${deckCard.targetCount} verified`
-      });
-    } else {
-      buzz([40, 60, 40]);
-      showFoundBanner({ kind: 'not_in_deck', name: card.name });
-    }
+    pendingHit = { key, card, deckCard };
+    buzz(80);
   }
 
-  function showFoundBanner(banner: FoundBanner) {
-    foundBanner = banner;
-    clearTimeout(bannerTimer);
-    // Only dismiss if this is still the current banner (a newer hit replaced it)
-    bannerTimer = setTimeout(() => {
-      if (foundBanner === banner) foundBanner = null;
-    }, BANNER_DURATION_MS);
+  /** User confirmed the capture: mark one copy as found (undoable via toast). */
+  function confirmPendingHit() {
+    const hit = pendingHit;
+    if (!hit?.deckCard) return;
+    deckStore.recordCameraScan(hit.deckCard.id);
+    dismissPendingHit(hit.key);
+    buzz(120);
+  }
+
+  /** User declined: dismiss the modal without marking anything. */
+  function declinePendingHit() {
+    const hit = pendingHit;
+    if (!hit) return;
+    dismissPendingHit(hit.key);
+    buzz([40, 60]);
+  }
+
+  function dismissPendingHit(key: string) {
+    pendingHit = null;
+    // Restart the cooldown so a card we just decided on doesn't re-prompt immediately
+    lastHitKey = key;
+    lastHitAt = Date.now();
   }
 
   function buzz(pattern: number | number[]) {
@@ -566,18 +574,53 @@
             </div>
           {/if}
 
-          <!-- Continuous mode: transient "found" banner (camera keeps running underneath) -->
-          {#if foundBanner}
-            <div class="absolute inset-x-2 top-2 z-10 flex justify-center pointer-events-none">
+          <!-- Continuous mode: confirm a found card (camera keeps running behind it) -->
+          {#if scanMode === 'continuous' && pendingHit}
+            <div class="absolute inset-x-0 bottom-2 z-20 flex justify-center px-2 pointer-events-none">
               <div
-                class="animate-toast-in flex items-center gap-2.5 rounded-full px-4 py-2 shadow-xl border {foundBanner.kind === 'found' ? 'bg-success/95 border-success text-white' : 'bg-warning/95 border-warning text-black'}"
+                role="dialog"
+                aria-label="Confirm scanned card"
+                class="animate-toast-in pointer-events-auto w-full max-w-sm bg-base-100 rounded-2xl border border-base-300 shadow-2xl p-3.5 sm:p-4"
               >
-                <span class="w-4 h-4 shrink-0">{@html foundBanner.kind === 'found' ? checkIconSvg : warningIconSvg}</span>
-                <div class="min-w-0">
-                  <p class="text-sm font-bold leading-tight truncate max-w-[55vw]">{foundBanner.name}</p>
-                  {#if foundBanner.detail}
-                    <p class="text-[11px] opacity-80 leading-tight">{foundBanner.detail}</p>
+                <div class="flex gap-3 items-start">
+                  <img
+                    src={getCardImageUrl(pendingHit.card)}
+                    alt={pendingHit.card.name}
+                    class="w-14 h-auto rounded-md border border-base-300 shadow-sm shrink-0"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <h3 class="font-bold text-sm leading-snug">{pendingHit.card.name}</h3>
+                    <p class="text-[11px] text-base-content/60 mt-0.5 truncate">{pendingHit.card.type_line || 'Card'}</p>
+                  </div>
+                </div>
+
+                {#if pendingHit.deckCard}
+                  <div class="mt-2.5 flex items-center gap-2 text-xs bg-success/10 border border-success/30 text-success rounded-lg px-2.5 py-1.5">
+                    <span class="w-3.5 h-3.5 shrink-0">{@html checkIconSvg}</span>
+                    In your deck — {pendingHit.deckCard.verifiedCount} of {pendingHit.deckCard.targetCount} found so far
+                  </div>
+                {:else}
+                  <div class="mt-2.5 flex items-center gap-2 text-xs bg-warning/10 border border-warning/30 rounded-lg px-2.5 py-1.5">
+                    <span class="w-3.5 h-3.5 shrink-0">{@html warningIconSvg}</span>
+                    Not in your deck — nothing to mark
+                  </div>
+                {/if}
+
+                <div class="mt-3 flex gap-2">
+                  {#if pendingHit.deckCard}
+                    <button
+                      onclick={confirmPendingHit}
+                      title="Mark one copy as found"
+                      class="btn btn-primary btn-sm flex-1 gap-1.5"
+                    >
+                      <span class="w-3.5 h-3.5 shrink-0">{@html checkIconSvg}</span>
+                      Add
+                    </button>
                   {/if}
+                  <button onclick={declinePendingHit} class="btn btn-outline btn-sm flex-1 gap-1.5">
+                    <span class="w-3.5 h-3.5 shrink-0">{@html xmarkIconSvg}</span>
+                    Decline
+                  </button>
                 </div>
               </div>
             </div>
@@ -635,16 +678,16 @@
           <!-- Scan mode toggle -->
           <div class="join bg-black/40 p-0.5 rounded-lg border border-white/20">
             <button
-              onclick={() => (scanMode = 'snap')}
+              onclick={() => { scanMode = 'snap'; pendingHit = null; }}
               class="join-item btn btn-xs font-medium {scanMode === 'snap' ? 'btn-primary' : 'btn-ghost text-white/70'}"
               title="Tap the shutter to scan one card at a time"
             >
               Snap
             </button>
             <button
-              onclick={() => (scanMode = 'continuous')}
+              onclick={() => { scanMode = 'continuous'; pendingHit = null; }}
               class="join-item btn btn-xs font-medium {scanMode === 'continuous' ? 'btn-primary' : 'btn-ghost text-white/70'}"
-              title="Keep the camera running — cards are found and marked automatically"
+              title="Keep the camera running — confirm each card as it's found"
             >
               Continuous
             </button>
@@ -653,7 +696,7 @@
           <p class="text-center text-[11px] text-white/40 leading-snug">
             {scanMode === 'snap'
               ? 'Fit the card inside the dashed frame — you can hold the phone a bit farther away.'
-              : 'Hold each card inside the frame — it gets marked as found automatically (undoable).'}
+              : "Hold a card inside the frame — you'll get a prompt to add or decline it."}
           </p>
         </div>
       {:else if phase === 'camera_error'}
