@@ -62,6 +62,8 @@ export interface DeckCardItem {
   rawName: string;
   targetCount: number;
   verifiedCount: number;
+  /** How many times this card was captured via camera (0 = never scanned) */
+  scanCount?: number;
   extraCount?: number;
   section: 'commander' | 'mainboard' | 'sideboard' | 'companion' | 'other';
   setCode?: string;
@@ -94,12 +96,16 @@ export interface SavedDeckSession {
   sourceUrl?: string;
   updatedAt: number;
   checkedStatus: Record<string, number>;
+  /** card name -> times captured via camera (optional for older sessions) */
+  scanCounts?: Record<string, number>;
 }
 
 export interface VerificationToast {
   cardId: string;
   cardName: string;
   previousCount: number;
+  /** Previous scanCount when the action was a camera capture (undefined for tap actions) */
+  previousScanCount?: number;
   action: 'found' | 'unfound';
 }
 

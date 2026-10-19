@@ -1,7 +1,7 @@
 <script lang="ts">
   import { deckStore } from "../state/deck.svelte";
   import type { DeckCardItem } from "../types";
-  import { boltIconSvg, checkIconSvg, questionCircleIconSvg } from "../icons";
+  import { boltIconSvg, cameraIconSvg, checkIconSvg, questionCircleIconSvg } from "../icons";
 
   function handleRowClick(card: DeckCardItem) {
     deckStore.toggleCard(card.id);
@@ -163,6 +163,15 @@
                         >
                           <span class="w-3 h-3 shrink-0 text-neutral-900">{@html boltIconSvg}</span>
                           GC
+                        </span>
+                      {/if}
+                      {#if (card.scanCount ?? 0) > 1}
+                        <span
+                          class="badge badge-warning badge-xs font-bold gap-1"
+                          title={`Captured ${card.scanCount} times via camera`}
+                        >
+                          <span class="w-3 h-3 shrink-0 text-neutral-900">{@html cameraIconSvg}</span>
+                          ×{card.scanCount}
                         </span>
                       {/if}
                     </div>

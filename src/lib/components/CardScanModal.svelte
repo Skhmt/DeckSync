@@ -212,16 +212,9 @@
 
     const deckCard = matchDeckCard(deckStore.cards, card) ?? null;
     if (deckCard) {
-      // Same path as tapping "Accept" in snap mode — the shared undo toast
-      // renders above the scanner, so a mis-OCR can be reverted.
-      const previousCount = deckCard.verifiedCount;
-      deckStore.incrementCard(deckCard.id);
-      deckStore.verificationToast = {
-        cardId: deckCard.id,
-        cardName: deckCard.name,
-        previousCount,
-        action: 'found'
-      };
+      // Same path as tapping "Accept" in snap mode — records the capture and
+      // surfaces the shared undo toast so a mis-OCR can be reverted.
+      deckStore.recordCameraScan(deckCard.id);
       buzz(80);
       showFoundBanner({
         kind: 'found',
@@ -411,16 +404,9 @@
     const deckCard = foundDeckCard;
     if (!deckCard) return;
 
-    const previousCount = deckCard.verifiedCount;
-    deckStore.incrementCard(deckCard.id);
-    // Reuse the shared undo toast so a misclick can be reverted (it renders
-    // above the scanner, so it stays visible while scanning continues)
-    deckStore.verificationToast = {
-      cardId: deckCard.id,
-      cardName: deckCard.name,
-      previousCount,
-      action: 'found'
-    };
+    // Record the capture (verifies one copy + tracks repeat captures) and
+    // surface the shared undo toast so a misclick can be reverted
+    deckStore.recordCameraScan(deckCard.id);
     // Stay in the scanner so the next card can be photographed right away.
     handleRetry();
   }

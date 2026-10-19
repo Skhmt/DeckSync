@@ -366,6 +366,11 @@ export class DeckState {
     const card = this.cards.find(c => c.id === toast.cardId);
     if (card) {
       card.verifiedCount = toast.previousCount;
+      // Camera captures also bump scanCount — revert that too so a cancelled
+      // capture doesn't keep the "captured multiple times" badge alive
+      if (toast.previousScanCount !== undefined) {
+        card.scanCount = toast.previousScanCount;
+      }
     }
     this.verificationToast = null;
     this.persistSession();
@@ -375,10 +380,35 @@ export class DeckState {
     this.verificationToast = null;
   }
 
+  /**
+   * Register a camera capture of a card: marks one copy as found and records
+   * the capture (scanCount) so cards photographed more than once are flagged
+   * in the deck views, similar to multi-copy counters.
+   */
+  recordCameraScan(id: string): void {
+    const card = this.cards.find(c => c.id === id);
+    if (!card) return;
+
+    // Surface an undo toast so a misclicked capture can be reverted
+    this.verificationToast = {
+      cardId: card.id,
+      cardName: card.name,
+      previousCount: card.verifiedCount,
+      previousScanCount: card.scanCount ?? 0,
+      action: 'found'
+    };
+
+    card.verifiedCount += 1;
+    card.scanCount = (card.scanCount ?? 0) + 1;
+    this.persistSession();
+  }
+
   unverifyCard(id: string): void {
     const card = this.cards.find(c => c.id === id);
     if (!card) return;
     card.verifiedCount = 0;
+    // Reset capture history so a re-verification starts fresh
+    card.scanCount = 0;
     this.persistSession();
   }
 
@@ -408,6 +438,7 @@ export class DeckState {
   uncheckAll(): void {
     for (const card of this.cards) {
       card.verifiedCount = 0;
+      card.scanCount = 0;
     }
     this.persistSession();
   }
@@ -416,8 +447,12 @@ export class DeckState {
     if (this.cards.length === 0) return;
 
     const checkedStatus: Record<string, number> = {};
+    const scanCounts: Record<string, number> = {};
     for (const c of this.cards) {
       checkedStatus[c.name] = c.verifiedCount;
+      if (c.scanCount && c.scanCount > 0) {
+        scanCounts[c.name] = c.scanCount;
+      }
     }
 
     const session: SavedDeckSession = {
@@ -427,7 +462,8 @@ export class DeckState {
       rawPayload: this.rawPayload,
       sourceUrl: this.sourceUrl,
       updatedAt: Date.now(),
-      checkedStatus
+      checkedStatus,
+      scanCounts
     };
 
     try {
@@ -451,6 +487,15 @@ export class DeckState {
           if (typeof session.checkedStatus[card.name] === 'number') {
             // Never restore a negative count
             card.verifiedCount = Math.max(0, session.checkedStatus[card.name]);
+          }
+        }
+      }
+      // Restore camera capture counts (absent in older sessions)
+      if (session.scanCounts) {
+        for (const card of this.cards) {
+          const scans = session.scanCounts[card.name];
+          if (typeof scans === 'number' && scans > 0) {
+            card.scanCount = scans;
           }
         }
       }

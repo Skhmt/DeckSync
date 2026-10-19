@@ -2,7 +2,7 @@
   import type { DeckCardItem } from "../types";
   import { deckStore } from "../state/deck.svelte";
   import { getCardImageUrl } from "../api/scryfall";
-  import { boltIconSvg, checkIconSvg, flipIconSvg } from "../icons";
+  import { boltIconSvg, cameraIconSvg, checkIconSvg, flipIconSvg } from "../icons";
 
   let { card }: { card: DeckCardItem } = $props();
 
@@ -25,6 +25,9 @@
   let isOverLimit = $derived(
     copyLimit !== null && card.targetCount > copyLimit,
   );
+  // Camera captures: flag cards photographed more than once (like multi-copy counters)
+  let scanCount = $derived(card.scanCount ?? 0);
+  let capturedMultipleTimes = $derived(scanCount > 1);
   let hasLegalityIssue = $derived(
     isBanned || isNotLegal || isOverLimit,
   );
@@ -152,6 +155,16 @@
         >
           <span class="w-3 h-3 shrink-0 text-neutral-900">{@html boltIconSvg}</span>
           GC
+        </span>
+      {/if}
+
+      {#if capturedMultipleTimes}
+        <span
+          class="badge badge-warning badge-xs font-bold gap-1 ring-1 ring-black/40 shadow-[0_1px_2px_rgba(0,0,0,0.55),0_3px_8px_rgba(0,0,0,0.35)]"
+          title={`Captured ${scanCount} times via camera`}
+        >
+          <span class="w-3 h-3 shrink-0 text-neutral-900">{@html cameraIconSvg}</span>
+          ×{scanCount}
         </span>
       {/if}
 
