@@ -26,24 +26,16 @@
   let stream: MediaStream | null = null;
   let videoAspect = $state(4 / 3);
 
-  // "Record" mode: sample a frame every FRAME_INTERVAL_MS for RECORD_DURATION_MS,
-  // then OCR the sampled frames (equivalent to scanning a short video clip).
-  const RECORD_DURATION_MS = 2500;
-  const FRAME_INTERVAL_MS = 300;
-  let recording = $state(false);
-  let recordProgress = $state(0);
-  let recordFrames: HTMLCanvasElement[] = [];
-  let recordTimer: number | null = null;
-  let recordStart = 0;
+  // A "snap" is a short burst of frames captured back-to-back (invisible to the
+  // user) — voting across the burst keeps single-photo scans reliable.
+  const BURST_FRAMES = 3;
+  const BURST_INTERVAL_MS = 150;
 
   // Bumped on every scan and on close so in-flight async work bails out
   let scanToken = 0;
 
   const foundCard = $derived(outcome?.card ?? null);
   const foundDeckCard = $derived(outcome?.deckCard ?? null);
-  const recordSecondsLeft = $derived(
-    ((RECORD_DURATION_MS * (1 - recordProgress)) / 1000).toFixed(1)
-  );
 
   // --- Camera lifecycle -------------------------------------------------
 
@@ -61,6 +53,19 @@
       scanToken++;
       stopStream();
     };
+  });
+
+  // Re-attach a running stream whenever the <video> element (re)appears in the
+  // DOM. The element is unmounted while the result panel is shown, so without
+  // this "Try Again" would mount a fresh video element with no source — a
+  // black screen even though the camera stream is still alive.
+  $effect(() => {
+    const el = videoEl;
+    const s = stream;
+    if (el && s && el.srcObject !== s) {
+      el.srcObject = s;
+      void el.play().catch(() => {});
+    }
   });
 
   async function openCamera() {
@@ -87,11 +92,7 @@
         return;
       }
 
-      stream = s;
-      if (videoEl) {
-        videoEl.srcObject = s;
-        await videoEl.play().catch(() => {});
-      }
+      stream = s; // the attach $effect wires it to the <video> element
       phase = 'live';
     } catch (err) {
       if (token !== scanToken) return;
@@ -101,13 +102,6 @@
   }
 
   function stopStream() {
-    if (recordTimer !== null) {
-      clearInterval(recordTimer);
-      recordTimer = null;
-    }
-    recording = false;
-    recordProgress = 0;
-    recordFrames = [];
     stream?.getTracks().forEach(t => t.stop());
     stream = null;
     if (videoEl) videoEl.srcObject = null;
@@ -133,49 +127,21 @@
     return 'Could not start the camera. Please try again.';
   }
 
-  // --- Capture (snap / record) ------------------------------------------
+  // --- Capture -------------------------------------------------------------
 
-  function handleSnap() {
-    if (!videoEl || phase !== 'live' || recording) return;
-    void runScan([captureFrame(videoEl)]);
+  function nextFrame(): Promise<void> {
+    return new Promise(r => setTimeout(r, BURST_INTERVAL_MS));
   }
 
-  function toggleRecord() {
-    if (phase !== 'live') return;
-    if (!recording) startRecording();
-    else stopRecordingAndScan();
-  }
-
-  function startRecording() {
-    if (!videoEl || recording) return;
-    recording = true;
-    recordFrames = [];
-    recordProgress = 0;
-    recordStart = Date.now();
-    captureNow();
-    recordTimer = window.setInterval(() => {
-      captureNow();
-      const elapsed = Date.now() - recordStart;
-      recordProgress = Math.min(1, elapsed / RECORD_DURATION_MS);
-      if (elapsed >= RECORD_DURATION_MS) stopRecordingAndScan();
-    }, FRAME_INTERVAL_MS);
-  }
-
-  function captureNow() {
-    if (videoEl && recording) {
-      recordFrames.push(captureFrame(videoEl));
+  /** Captures a short burst of frames back-to-back, then scans them. */
+  async function handleSnap() {
+    if (!videoEl || phase !== 'live') return;
+    const frames: HTMLCanvasElement[] = [];
+    for (let i = 0; i < BURST_FRAMES; i++) {
+      frames.push(captureFrame(videoEl));
+      if (i < BURST_FRAMES - 1) await nextFrame();
     }
-  }
-
-  function stopRecordingAndScan() {
-    if (recordTimer !== null) {
-      clearInterval(recordTimer);
-      recordTimer = null;
-    }
-    recording = false;
-    const frames = recordFrames;
-    recordFrames = [];
-    if (frames.length > 0) void runScan(frames);
+    void runScan(frames);
   }
 
   // --- Scan pipeline ------------------------------------------------------
@@ -186,11 +152,11 @@
     statusText = 'Reading set code & collector number...';
 
     let bestSet: { frame: HTMLCanvasElement; text: string; confidence: number; parsed: SetCodeParse | null } | null = null;
-    let nameRead: { text: string; name?: string } | null = null;
+    let nameRead: { text: string; confidence: number; name?: string } | null = null;
 
     try {
-      // Pass 1 — bottom-left corner of every sampled frame (small crop, fast).
-      // A confident parseable read is enough; no need to OCR the rest of the clip.
+      // Pass 1 — bottom-left corner of every burst frame (small crop, fast).
+      // A confident parseable read is enough; no need to OCR the rest.
       for (const frame of frames) {
         const read = await recognizeSetRegion(frame);
         if (token !== scanToken) return;
@@ -200,13 +166,14 @@
         if (read.parsed && read.confidence >= 60) break;
       }
 
-      // Pass 2 — name bar of the clearest frame (fallback for older cards that
+      // Pass 2 — name bar of every burst frame (fallback for older cards that
       // don't print a set code, and as a candidate name for the printing lookup).
+      // The highest-confidence reading wins.
       statusText = 'Reading card name...';
-      const nameFrame = bestSet?.frame ?? frames[0];
-      if (nameFrame) {
-        nameRead = await recognizeNameRegion(nameFrame);
+      for (const frame of frames) {
+        const read = await recognizeNameRegion(frame);
         if (token !== scanToken) return;
+        if (!nameRead || read.confidence > nameRead.confidence) nameRead = read;
       }
 
       // Pass 3 — resolve the card on Scryfall (the only network step)
@@ -431,28 +398,11 @@
     <!-- Bottom controls -->
     <div class="shrink-0 px-4 pt-2 pb-[max(env(safe-area-inset-bottom),12px)]">
       {#if phase === 'live'}
-        <div class="flex items-center justify-center gap-10">
-          <!-- Record ~2.5s of video, then scan every sampled frame -->
-          <button
-            onclick={toggleRecord}
-            class="flex flex-col items-center gap-1.5 group"
-            title={recording ? 'Stop recording and scan' : 'Record a short clip while you line up the card'}
-          >
-            <span
-              class="w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors {recording
-                ? 'border-error'
-                : 'border-white/60 group-hover:border-white'}"
-            >
-              <span class="w-4 h-4 rounded-full transition-colors {recording ? 'bg-error animate-pulse' : 'bg-white/70 group-hover:bg-white'}"></span>
-            </span>
-            <span class="text-[10px] text-white/60">{recording ? `${recordSecondsLeft}s` : 'Record'}</span>
-          </button>
-
-          <!-- Snap a single photo -->
+        <div class="flex items-center justify-center">
+          <!-- Snap a photo (a short burst is captured automatically for reliability) -->
           <button
             onclick={handleSnap}
-            disabled={recording}
-            class="flex flex-col items-center gap-1.5 group disabled:opacity-40"
+            class="flex flex-col items-center gap-1.5 group"
             title="Capture a photo of the card"
           >
             <span class="w-16 h-16 rounded-full border-4 border-white/80 bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors">
@@ -460,9 +410,6 @@
             </span>
             <span class="text-[10px] text-white/60">Snap</span>
           </button>
-
-          <!-- Invisible spacer keeps the shutter centered -->
-          <span class="w-12 h-12 invisible"></span>
         </div>
         <p class="text-center text-[11px] text-white/40 mt-3 leading-snug">
           Line the card up in the frame — its set code & number (bottom-left) or name (top) will be read.

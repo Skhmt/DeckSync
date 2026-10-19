@@ -129,30 +129,28 @@ function cleanNameLine(line: string): string | undefined {
 
 /**
  * Extracts a card-name candidate from the OCR text of the top name-bar region.
- * Border noise and frame artifacts produce short garbage lines, while the real
- * name is the letter-richest line in the crop — so the highest-scoring line
- * wins (ties keep the first, i.e. the topmost, which matters when the type
- * line leaks into the crop below the name).
+ * The card name is always the first real text on the card — frame noise sits
+ * above it (short fragments) and art texture below it (random words) — so the
+ * earliest word-like line wins: tokens of 4+ letters count positively, short
+ * fragments negatively, and a line needs a score of at least 3.
  */
 export function extractCardName(raw: string): string | undefined {
   if (!raw) return undefined;
 
   const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
-  let bestLine: string | undefined;
-  let bestScore = 0;
-
   for (const line of lines) {
     // Skip mana-cost / number-only lines (e.g. the cost printed right of the name bar)
     if (NON_NAME_LINE_RE.test(line.replace(/[^\p{L}\p{N}]/gu, ''))) continue;
     const name = cleanNameLine(line);
     if (!name) continue;
 
-    const score = (name.match(/\p{L}/gu) ?? []).length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestLine = name;
+    let score = 0;
+    for (const tok of name.split(/\s+/)) {
+      const letters = (tok.match(/\p{L}/gu) ?? []).length;
+      score += letters >= 4 ? letters : -letters;
     }
+    if (score >= 3) return name;
   }
 
-  return bestScore >= 3 ? bestLine : undefined;
+  return undefined;
 }

@@ -452,24 +452,33 @@ export async function lookupCardByPrinting(
 
 /**
  * Fuzzy name lookup for the card-name fallback path (older cards don't print a
- * set code). Uses the local IndexedDB cache first. OCR sometimes glues part of
- * the mana cost or type line onto the end of the name, so when the full reading
- * misses, trailing words are dropped one at a time (up to 3 attempts total).
+ * set code). Uses the local IndexedDB cache first. OCR sometimes glues garbage
+ * onto the reading — part of the mana cost or type line at the end, or an icon
+ * artifact (e.g. the graveyard glyph) at the start — so when the full reading
+ * misses, trailing then leading words are dropped one at a time (3 attempts).
  */
 export async function lookupCardByName(name: string): Promise<ScryfallCard | null> {
   const cached = await getCachedCard(name);
   if (cached) return cached;
 
   const words = name.split(/\s+/).filter(Boolean);
-  const candidates = [name];
-  for (let i = words.length - 1; i >= 1 && candidates.length < 3; i--) {
-    candidates.push(words.slice(0, i).join(' '));
+  const candidates: string[] = [name];
+  if (words.length > 1) {
+    candidates.push(words.slice(0, -1).join(' ')); // trailing garbage (cost / type line)
+    candidates.push(words.slice(1).join(' ')); // leading garbage (icon artifacts)
   }
+  const seen = new Set<string>();
+  const uniqueCandidates = candidates.filter(c => {
+    const key = c.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  for (const candidate of candidates) {
+  for (const candidate of uniqueCandidates) {
     try {
       const response = await fetchScryfall(`${SCRYFALL_CARD_URL}/named?fuzzy=${encodeURIComponent(candidate)}`);
-      if (!response.ok) continue; // fuzzy miss — try the next (shorter) candidate
+      if (!response.ok) continue; // fuzzy miss — try the next candidate
       const card = normalizeCard((await response.json()) as ScryfallCard);
       await cacheCards([card]);
       return card;
