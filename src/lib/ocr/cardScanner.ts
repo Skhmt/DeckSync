@@ -32,25 +32,37 @@ export function initScanner(): Promise<Worker> {
   return workerPromise;
 }
 
-/**
- * Card layout regions as fractions of the full camera frame. The scanner crops
- * these areas, and the CameraScanModal framing guide mirrors them so the user
- * knows where to line the card up.
- */
-export interface RegionSpec {
+/** A rectangle expressed as fractions of its parent area (frame or card zone). */
+export interface FrameRect {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
+}
+
+/**
+ * The central area of the camera frame where the user lines up the card (the
+ * dashed guide in the scanner). Keeping it smaller than the full frame lets the
+ * card sit farther from the phone. All OCR regions below are expressed as
+ * fractions of this zone, not of the full frame.
+ */
+export const CARD_ZONE: FrameRect = { x0: 0.18, y0: 0.10, x1: 0.82, y1: 0.90 };
+
+/**
+ * Card layout regions as fractions of the card zone (see CARD_ZONE). The
+ * scanner crops these areas; CameraScanModal's framing guide mirrors them so
+ * the user knows where to line the card up.
+ */
+export interface RegionSpec extends FrameRect {
   /** Height (px) the crop is scaled to before OCR — small text needs upscaling */
   targetHeight: number;
 }
 
 /** Top name bar of the card (used for older cards without a printed set code). */
-export const NAME_REGION: RegionSpec = { x0: 0.05, y0: 0.03, x1: 0.95, y1: 0.15, targetHeight: 380 };
+export const NAME_REGION: RegionSpec = { x0: 0.02, y0: 0.03, x1: 0.98, y1: 0.12, targetHeight: 380 };
 
 /** Bottom-left corner of modern cards: collector number line above the set-code line. */
-export const SET_REGION: RegionSpec = { x0: 0.02, y0: 0.76, x1: 0.58, y1: 0.985, targetHeight: 240 };
+export const SET_REGION: RegionSpec = { x0: 0.0, y0: 0.77, x1: 0.60, y1: 1.0, targetHeight: 300 };
 
 /** Grabs the current camera frame as a full-resolution canvas. */
 export function captureFrame(video: HTMLVideoElement): HTMLCanvasElement {
@@ -65,12 +77,19 @@ export function captureFrame(video: HTMLVideoElement): HTMLCanvasElement {
 /**
  * Crops a region out of a full frame and prepares it for OCR:
  * upscaled to the target height, grayscale, contrast-stretched.
+ * The region is expressed relative to CARD_ZONE, so it is mapped onto the
+ * full frame first.
  */
 function preprocessRegion(frame: HTMLCanvasElement, region: RegionSpec): HTMLCanvasElement {
-  const sx = frame.width * region.x0;
-  const sy = frame.height * region.y0;
-  const sw = frame.width * (region.x1 - region.x0);
-  const sh = frame.height * (region.y1 - region.y0);
+  const fx0 = CARD_ZONE.x0 + region.x0 * (CARD_ZONE.x1 - CARD_ZONE.x0);
+  const fy0 = CARD_ZONE.y0 + region.y0 * (CARD_ZONE.y1 - CARD_ZONE.y0);
+  const fx1 = CARD_ZONE.x0 + region.x1 * (CARD_ZONE.x1 - CARD_ZONE.x0);
+  const fy1 = CARD_ZONE.y0 + region.y1 * (CARD_ZONE.y1 - CARD_ZONE.y0);
+
+  const sx = frame.width * fx0;
+  const sy = frame.height * fy0;
+  const sw = frame.width * (fx1 - fx0);
+  const sh = frame.height * (fy1 - fy0);
 
   const scale = region.targetHeight / Math.max(1, sh);
   const w = Math.max(8, Math.round(sw * scale));
