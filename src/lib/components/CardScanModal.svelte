@@ -37,6 +37,35 @@
   // Bumped on every scan and on close so in-flight async work bails out
   let scanToken = 0;
 
+  // --- Continuous mode ------------------------------------------------------
+  // Pacing between attempts — tesseract itself is the bottleneck, this is just
+  // the idle gap before the next frame is grabbed.
+  const CONTINUOUS_PACING_MS = 700;
+  // A found card stays suppressed while it sits in frame: for at most this long,
+  // or until a couple of attempts read nothing (i.e. the card moved away).
+  const HIT_COOLDOWN_MS = 8000;
+  const REARM_AFTER_MISSES = 2;
+  const BANNER_DURATION_MS = 2500;
+
+  type ScanMode = 'snap' | 'continuous';
+  let scanMode = $state<ScanMode>('snap');
+
+  // Transient "found" banner shown over the live video in continuous mode
+  interface FoundBanner {
+    kind: 'found' | 'not_in_deck';
+    name: string;
+    detail?: string;
+  }
+  let foundBanner = $state<FoundBanner | null>(null);
+  // True while a continuous attempt is OCR-ing / looking up (drives the status)
+  let continuousBusy = $state(false);
+
+  // Dedup bookkeeping (plain lets — internal, never rendered)
+  let lastHitKey = '';
+  let lastHitAt = 0;
+  let missesSinceHit = 0;
+  let bannerTimer: ReturnType<typeof setTimeout> | undefined;
+
   const foundCard = $derived(outcome?.card ?? null);
   const foundDeckCard = $derived(outcome?.deckCard ?? null);
 
@@ -54,6 +83,7 @@
 
     outcome = null;
     cameraError = '';
+    foundBanner = null;
     openCamera();
 
     // Warm up the OCR engine in the background so the first scan is snappy
@@ -77,6 +107,144 @@
       void el.play().catch(() => {});
     }
   });
+
+  // Continuous mode: while the camera is live, attempts run back-to-back —
+  // capture one frame, OCR the set-code corner, and only if that doesn't
+  // resolve, OCR the name bar, then look the card up on Scryfall. Tesseract
+  // paces the loop; no two attempts ever overlap. Leaving the effect (mode
+  // switch, close, or phase change) bumps scanToken so an in-flight attempt
+  // discards its result instead of firing a stale toast.
+  $effect(() => {
+    const active = isOpen && scanMode === 'continuous' && phase === 'live';
+    if (!active) return;
+
+    continuousBusy = false;
+    let cancelled = false;
+    void (async () => {
+      while (!cancelled) {
+        await continuousAttempt();
+        if (cancelled) return;
+        await sleep(CONTINUOUS_PACING_MS);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      scanToken++;
+      continuousBusy = false;
+    };
+  });
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  /** One continuous-mode attempt: single frame, lazy OCR (corner first, name bar only if needed). */
+  async function continuousAttempt() {
+    const token = scanToken;
+    if (!videoEl || phase !== 'live') return;
+    continuousBusy = true;
+
+    try {
+      const frame = captureFrame(videoEl);
+
+      // Fast path — bottom-left corner only (small crop, fast)
+      const setRead = await recognizeSetRegion(frame);
+      if (token !== scanToken) return;
+
+      let card: ScryfallCard | null = null;
+      if (setRead.parsed && setRead.confidence >= 60) {
+        card = await identifyScannedCard({
+          setCode: setRead.parsed.setCode,
+          collectorNumber: setRead.parsed.collectorNumber
+        });
+        if (token !== scanToken) return;
+      }
+
+      // Fallback — name bar (older cards without a printed set code, or a corner
+      // read that didn't resolve to a printing). Set info is passed along so the
+      // lookup can still do an in-set search.
+      if (!card) {
+        const nameRead = await recognizeNameRegion(frame);
+        if (token !== scanToken) return;
+        card = await identifyScannedCard({
+          name: nameRead.name,
+          setCode: setRead.parsed?.setCode,
+          collectorNumber: setRead.parsed?.collectorNumber
+        });
+      }
+
+      if (token !== scanToken) return;
+      if (card) {
+        handleContinuousHit(card);
+      } else {
+        noteContinuousMiss();
+      }
+    } catch (err) {
+      console.warn('Continuous scan attempt failed:', err);
+      noteContinuousMiss();
+    } finally {
+      if (token === scanToken) continuousBusy = false;
+    }
+  }
+
+  /** A couple of empty reads in a row means the card left the frame — re-arm the dedup. */
+  function noteContinuousMiss() {
+    if (lastHitKey) {
+      missesSinceHit++;
+      if (missesSinceHit >= REARM_AFTER_MISSES) lastHitKey = '';
+    }
+  }
+
+  /** A card was identified in continuous mode: dedup, then notify + auto-verify. */
+  function handleContinuousHit(card: ScryfallCard) {
+    const key = card.id || `${card.name}|${card.set ?? ''}`;
+    const now = Date.now();
+    if (key === lastHitKey && now - lastHitAt < HIT_COOLDOWN_MS) return;
+    lastHitKey = key;
+    lastHitAt = now;
+    missesSinceHit = 0;
+
+    const deckCard = matchDeckCard(deckStore.cards, card) ?? null;
+    if (deckCard) {
+      // Same path as tapping "Accept" in snap mode — the shared undo toast
+      // renders above the scanner, so a mis-OCR can be reverted.
+      const previousCount = deckCard.verifiedCount;
+      deckStore.incrementCard(deckCard.id);
+      deckStore.verificationToast = {
+        cardId: deckCard.id,
+        cardName: deckCard.name,
+        previousCount,
+        action: 'found'
+      };
+      buzz(80);
+      showFoundBanner({
+        kind: 'found',
+        name: card.name,
+        detail: `${deckCard.verifiedCount} of ${deckCard.targetCount} verified`
+      });
+    } else {
+      buzz([40, 60, 40]);
+      showFoundBanner({ kind: 'not_in_deck', name: card.name });
+    }
+  }
+
+  function showFoundBanner(banner: FoundBanner) {
+    foundBanner = banner;
+    clearTimeout(bannerTimer);
+    // Only dismiss if this is still the current banner (a newer hit replaced it)
+    bannerTimer = setTimeout(() => {
+      if (foundBanner === banner) foundBanner = null;
+    }, BANNER_DURATION_MS);
+  }
+
+  function buzz(pattern: number | number[]) {
+    try {
+      navigator.vibrate?.(pattern);
+    } catch {
+      // Haptics unsupported — ignore
+    }
+  }
 
   async function openCamera() {
     const token = ++scanToken;
@@ -390,6 +558,23 @@
             </div>
           {/if}
 
+          <!-- Continuous mode: transient "found" banner (camera keeps running underneath) -->
+          {#if foundBanner}
+            <div class="absolute inset-x-2 top-2 z-10 flex justify-center pointer-events-none">
+              <div
+                class="animate-toast-in flex items-center gap-2.5 rounded-full px-4 py-2 shadow-xl border {foundBanner.kind === 'found' ? 'bg-success/95 border-success text-white' : 'bg-warning/95 border-warning text-black'}"
+              >
+                <span class="w-4 h-4 shrink-0">{@html foundBanner.kind === 'found' ? checkIconSvg : warningIconSvg}</span>
+                <div class="min-w-0">
+                  <p class="text-sm font-bold leading-tight truncate max-w-[55vw]">{foundBanner.name}</p>
+                  {#if foundBanner.detail}
+                    <p class="text-[11px] opacity-80 leading-tight">{foundBanner.detail}</p>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          {/if}
+
           <!-- Processing overlay -->
           {#if phase === 'processing'}
             <div class="absolute inset-0 rounded-xl bg-black/80 flex flex-col items-center justify-center gap-3 text-white px-6">
@@ -413,22 +598,56 @@
     <!-- Bottom controls -->
     <div class="shrink-0 px-4 pt-2 pb-[max(env(safe-area-inset-bottom),12px)]">
       {#if phase === 'live'}
-        <div class="flex items-center justify-center">
-          <!-- Snap a photo (a short burst is captured automatically for reliability) -->
-          <button
-            onclick={handleSnap}
-            class="flex flex-col items-center gap-1.5 group"
-            title="Capture a photo of the card"
-          >
-            <span class="w-16 h-16 rounded-full border-4 border-white/80 bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors">
-              <span class="w-12 h-12 rounded-full bg-white/90"></span>
-            </span>
-            <span class="text-[10px] text-white/60">Snap</span>
-          </button>
+        <div class="flex flex-col items-center gap-3">
+          <!-- Fixed-height row so toggling modes doesn't shift the layout -->
+          <div class="h-24 flex items-center justify-center">
+            {#if scanMode === 'snap'}
+              <!-- Snap a photo (a short burst is captured automatically for reliability) -->
+              <button
+                onclick={handleSnap}
+                class="flex flex-col items-center gap-1.5 group"
+                title="Capture a photo of the card"
+              >
+                <span class="w-16 h-16 rounded-full border-4 border-white/80 bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-colors">
+                  <span class="w-12 h-12 rounded-full bg-white/90"></span>
+                </span>
+                <span class="text-[10px] text-white/60">Snap</span>
+              </button>
+            {:else}
+              <!-- Continuous: the scanner works on its own; this is just a live status -->
+              <div class="flex flex-col items-center gap-2" title="Scanning automatically — no tap needed">
+                <span class="w-16 h-16 rounded-full border-4 border-success/70 bg-success/15 flex items-center justify-center">
+                  <span class="w-3.5 h-3.5 rounded-full bg-success animate-pulse"></span>
+                </span>
+                <span class="text-[10px] text-white/60">{continuousBusy ? 'Reading card…' : 'Scanning'}</span>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Scan mode toggle -->
+          <div class="join bg-black/40 p-0.5 rounded-lg border border-white/20">
+            <button
+              onclick={() => (scanMode = 'snap')}
+              class="join-item btn btn-xs font-medium {scanMode === 'snap' ? 'btn-primary' : 'btn-ghost text-white/70'}"
+              title="Tap the shutter to scan one card at a time"
+            >
+              Snap
+            </button>
+            <button
+              onclick={() => (scanMode = 'continuous')}
+              class="join-item btn btn-xs font-medium {scanMode === 'continuous' ? 'btn-primary' : 'btn-ghost text-white/70'}"
+              title="Keep the camera running — cards are found and marked automatically"
+            >
+              Continuous
+            </button>
+          </div>
+
+          <p class="text-center text-[11px] text-white/40 leading-snug">
+            {scanMode === 'snap'
+              ? 'Fit the card inside the dashed frame — you can hold the phone a bit farther away.'
+              : 'Hold each card inside the frame — it gets marked as found automatically (undoable).'}
+          </p>
         </div>
-        <p class="text-center text-[11px] text-white/40 mt-3 leading-snug">
-          Fit the card inside the dashed frame — you can hold the phone a bit farther away.
-        </p>
       {:else if phase === 'camera_error'}
         <div class="flex flex-col items-center gap-3 text-white/80 py-4 px-6 text-center">
           <p class="text-sm">{cameraError}</p>
