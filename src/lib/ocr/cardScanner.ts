@@ -47,7 +47,7 @@ export interface RegionSpec {
 }
 
 /** Top name bar of the card (used for older cards without a printed set code). */
-export const NAME_REGION: RegionSpec = { x0: 0.05, y0: 0.03, x1: 0.95, y1: 0.15, targetHeight: 300 };
+export const NAME_REGION: RegionSpec = { x0: 0.05, y0: 0.03, x1: 0.95, y1: 0.15, targetHeight: 380 };
 
 /** Bottom-left corner of modern cards: collector number line above the set-code line. */
 export const SET_REGION: RegionSpec = { x0: 0.02, y0: 0.76, x1: 0.58, y1: 0.985, targetHeight: 240 };
@@ -84,20 +84,42 @@ function preprocessRegion(frame: HTMLCanvasElement, region: RegionSpec): HTMLCan
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(frame, sx, sy, sw, sh, 0, 0, w, h);
 
-  // Grayscale + min/max contrast stretch (sampled) to boost small printed text
+  // Grayscale + percentile contrast stretch (robust to photo outliers — a single
+  // highlight pixel would wreck a min/max stretch) to boost small printed text
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
-  let min = 255;
-  let max = 0;
-  for (let i = 0; i < d.length; i += 4 * 8) {
-    const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    if (l < min) min = l;
-    if (l > max) max = l;
+  const gray = new Uint8ClampedArray(w * h);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    gray[p] = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
   }
-  const range = Math.max(1, max - min);
-  for (let i = 0; i < d.length; i += 4) {
-    let l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    l = 20 + ((l - min) / range) * 215; // map into [20, 235]
+
+  // Clip the bottom/top 1% of the histogram, then stretch the rest to [20, 235]
+  const hist = new Uint32Array(256);
+  for (let p = 0; p < gray.length; p++) hist[gray[p]]++;
+  const total = gray.length;
+  let lo = 0;
+  let acc = 0;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= total * 0.01) {
+      lo = v;
+      break;
+    }
+  }
+  let hi = 255;
+  acc = 0;
+  for (let v = 255; v >= 0; v--) {
+    acc += hist[v];
+    if (acc >= total * 0.01) {
+      hi = v;
+      break;
+    }
+  }
+  const range = Math.max(1, hi - lo);
+  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
+    let l = 20 + ((gray[p] - lo) / range) * 215;
+    if (l < 20) l = 20;
+    else if (l > 235) l = 235;
     d[i] = d[i + 1] = d[i + 2] = l;
   }
   ctx.putImageData(img, 0, 0);
