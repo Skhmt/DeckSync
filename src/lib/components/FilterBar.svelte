@@ -1,13 +1,15 @@
 <script lang="ts">
   import { deckStore } from '../state/deck.svelte';
-  import { ellipsisIconSvg, gridIconSvg, listIconSvg, sortAZIconSvg } from '../icons';
+  import { cameraIconSvg, ellipsisIconSvg, gridIconSvg, listIconSvg, sortAZIconSvg } from '../icons';
 
   let {
     headerHeight = 60,
     filterHeight = $bindable(56),
+    onOpenScan,
   }: {
     headerHeight?: number;
     filterHeight?: number;
+    onOpenScan?: () => void;
   } = $props();
 
   const filterOptions: { id: 'all' | 'not_found' | 'found'; label: string; shortLabel: string; count?: number }[] = $derived([
@@ -43,6 +45,19 @@
 
     <!-- Search + Grouping + View Layout Toggles -->
     <div class="flex items-center justify-between md:justify-end gap-1.5 sm:gap-2 w-full md:w-auto">
+      <!-- Camera Card Scan (left of the filter box) -->
+      {#if onOpenScan}
+        <button
+          onclick={onOpenScan}
+          class="btn btn-sm btn-outline gap-1 px-2 sm:px-3 shrink-0"
+          title="Point your camera at a card to find and verify it"
+          aria-label="Scan card with camera"
+        >
+          <span class="w-4 h-4 shrink-0">{@html cameraIconSvg}</span>
+          <span class="hidden lg:inline">Scan</span>
+        </button>
+      {/if}
+
       <!-- Search Input -->
       <div class="relative flex-1 sm:w-48 md:w-56">
         <input

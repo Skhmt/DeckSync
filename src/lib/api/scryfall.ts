@@ -3,6 +3,7 @@ import { getCachedCard, cacheCards } from '../storage/db';
 
 const SCRYFALL_COLLECTION_URL = 'https://api.scryfall.com/cards/collection';
 const SCRYFALL_SEARCH_URL = 'https://api.scryfall.com/cards/search';
+const SCRYFALL_CARD_URL = 'https://api.scryfall.com/cards';
 const BATCH_SIZE = 75;
 const PRINT_BATCH_SIZE = 10;
 const PRINT_PAGE_SIZE = 30;
@@ -373,4 +374,160 @@ export async function enrichDeckCards(
       isCustomOrNotFound: true
     };
   });
+}
+
+// --- Camera scan lookups ---
+
+async function fetchScryfall(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'DeckSync/1.0'
+    }
+  });
+}
+
+function normalizeCard(card: ScryfallCard): ScryfallCard {
+  // Normalize game_changer boolean flag
+  card.game_changer = Boolean(card.game_changer || card['game-changer']);
+  return card;
+}
+
+/**
+ * Looks up a specific printing from the set code + collector number printed on
+ * the bottom-left corner of modern cards. Tries the direct /cards/{set}/{number}
+ * endpoint first, then falls back to an in-set name search (matched client-side
+ * by collector number) when a candidate name is available.
+ */
+export async function lookupCardByPrinting(
+  setCode: string,
+  collectorNumber: string,
+  candidateName?: string
+): Promise<ScryfallCard | null> {
+  const set = setCode.toLowerCase();
+
+  // 1. Direct printing endpoint (fast path on the public Scryfall API).
+  //    Superset numbers like "20/270" may be indexed by their main number only.
+  const numberCandidates = [collectorNumber];
+  if (collectorNumber.includes('/')) {
+    numberCandidates.push(collectorNumber.split('/')[0]);
+  }
+
+  for (const num of numberCandidates) {
+    // Scryfall indexes alt-art suffixes in lowercase ("381z"); parsing uppercases them.
+    const apiNumber = num.replace(/([A-Z])$/, m => m.toLowerCase());
+    try {
+      const response = await fetchScryfall(`${SCRYFALL_CARD_URL}/${encodeURIComponent(set)}/${encodeURIComponent(apiNumber)}`);
+      if (response.ok) {
+        return normalizeCard((await response.json()) as ScryfallCard);
+      }
+      if (response.status !== 404) break; // other errors: don't retry variants
+    } catch {
+      // Network hiccup — fall through to the search fallback below
+    }
+  }
+
+  // 2. In-set name search, matched client-side by collector number
+  if (candidateName) {
+    try {
+      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+      const q = `name:"${candidateName.replace(/"/g, '')}" set:${set}`;
+      const response = await fetchScryfall(`${SCRYFALL_SEARCH_URL}?q=${encodeURIComponent(q)}&unique=prints`);
+      if (response.ok) {
+        const json: ScryfallSearchResponse = await response.json();
+        const hits = json.data ?? [];
+        // Prefer the exact collector-number match (case-insensitive for alt-art
+        // suffixes); otherwise accept the first hit
+        return normalizeCard(
+          hits.find(c => String(c.collector_number ?? '').toUpperCase() === collectorNumber.toUpperCase()) ?? hits[0] ?? null
+        );
+      }
+    } catch (err) {
+      console.warn('Scryfall in-set search failed:', err);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Fuzzy name lookup for the card-name fallback path (older cards don't print a
+ * set code). Uses the local IndexedDB cache first. OCR sometimes glues part of
+ * the mana cost or type line onto the end of the name, so when the full reading
+ * misses, trailing words are dropped one at a time (up to 3 attempts total).
+ */
+export async function lookupCardByName(name: string): Promise<ScryfallCard | null> {
+  const cached = await getCachedCard(name);
+  if (cached) return cached;
+
+  const words = name.split(/\s+/).filter(Boolean);
+  const candidates = [name];
+  for (let i = words.length - 1; i >= 1 && candidates.length < 3; i--) {
+    candidates.push(words.slice(0, i).join(' '));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetchScryfall(`${SCRYFALL_CARD_URL}/named?fuzzy=${encodeURIComponent(candidate)}`);
+      if (!response.ok) continue; // fuzzy miss — try the next (shorter) candidate
+      const card = normalizeCard((await response.json()) as ScryfallCard);
+      await cacheCards([card]);
+      return card;
+    } catch (err) {
+      console.warn('Scryfall fuzzy name lookup failed:', err);
+      return null;
+    }
+    // Be polite to the 1 req/s rate limit between attempts
+    await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+  }
+
+  return null;
+}
+
+export interface ScanLookupInput {
+  /** OCR'd card-name candidate from the top name bar */
+  name?: string;
+  /** Set code parsed from the bottom-left corner (modern cards) */
+  setCode?: string;
+  /** Collector number parsed from the bottom-left corner (modern cards) */
+  collectorNumber?: string;
+}
+
+/**
+ * Resolves a photographed card: exact printing first (set code + collector
+ * number), fuzzy name lookup as the fallback for older cards without a printed
+ * set code. Returns null when nothing could be identified.
+ */
+export async function identifyScannedCard(input: ScanLookupInput): Promise<ScryfallCard | null> {
+  if (input.setCode && input.collectorNumber) {
+    const byPrinting = await lookupCardByPrinting(input.setCode, input.collectorNumber, input.name);
+    if (byPrinting) return byPrinting;
+  }
+
+  if (input.name) {
+    return await lookupCardByName(input.name);
+  }
+
+  return null;
+}
+
+/**
+ * Finds the loaded-deck entry that corresponds to a Scryfall card. Handles
+ * double-faced names ("Front // Back") and face-name variants.
+ */
+export function matchDeckCard(cards: DeckCardItem[], card: ScryfallCard): DeckCardItem | undefined {
+  const names = new Set<string>();
+  const add = (n?: string) => {
+    if (n) names.add(n.toLowerCase().trim());
+  };
+
+  add(card.name);
+  for (const sep of [' // ', ' / ']) {
+    if (card.name.includes(sep)) {
+      card.name.split(sep).forEach(add);
+    }
+  }
+  card.card_faces?.forEach(f => add(f.name));
+
+  return cards.find(c => names.has(c.name.toLowerCase().trim()));
 }

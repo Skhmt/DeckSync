@@ -1,0 +1,158 @@
+/**
+ * Pure parsing helpers for OCR text read off physical MTG cards.
+ * Kept free of any DOM/browser dependencies so they can be unit-tested in Node.
+ */
+
+export interface SetCodeParse {
+  /** Modern set code as printed on the card, e.g. "MH3", "M49", "AER" */
+  setCode: string;
+  /** Collector number as printed, e.g. "259", alt-art "187A" (suffix uppercased), or superset form "20/270" */
+  collectorNumber: string;
+}
+
+/**
+ * The bottom-left corner of a modern MTG card prints the collector number on one
+ * line (next to the set symbol) and the set code on the next line, e.g.:
+ *
+ *     ◈ 177
+ *     MH3 · EN   JASON RAINVILLE
+ *
+ * OCR output is noisy, so each line is normalized before matching: uppercase,
+ * alphanumerics/slashes/spaces only. Set codes are 2–5 letters/digits with at
+ * least one letter (MH3, M49, AER, ONE); collector numbers are 1–4 digits,
+ * optionally with an alt-art letter suffix and/or a "/superset" tail. OCR often
+ * reads the number with a leading zero ("0216"), which is stripped.
+ *
+ * Older cards don't print this at all — callers should then fall back to
+ * reading the card name from the top of the card.
+ */
+export function parseSetAndCollector(raw: string): SetCodeParse | null {
+  if (!raw) return null;
+
+  // Keep line structure — the number/code layout across lines is what we match on.
+  const lines = raw
+    .split(/\n+/)
+    .map(l => l.toUpperCase().replace(/[^A-Z0-9/\s]/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  // Collector number: 1–4 digits + optional alt-art letter + optional "/superset"
+  const NUMBER_RE = /\b(\d{1,4}[A-Z]?\/?\d{0,3})\b/g;
+
+  interface Hit { line: number; value: string }
+  const numbers: Hit[] = [];
+  const codes: Hit[] = [];
+
+  lines.forEach((line, li) => {
+    for (const m of line.matchAll(NUMBER_RE)) numbers.push({ line: li, value: m[1] });
+
+    // The set code is printed at the left edge of its line (before "EN" and the
+    // artist credit), so only the first token of a line qualifies as a candidate.
+    const firstTok = line.split(/\s+/).find(Boolean);
+    if (firstTok && /^[A-Z0-9]{2,5}$/.test(firstTok) && /[A-Z]/.test(firstTok)) {
+      // Two-letter tokens without a digit are language codes / noise ("EN")
+      if (!(firstTok.length === 2 && !/\d/.test(firstTok))) {
+        codes.push({ line: li, value: firstTok });
+      }
+    }
+  });
+
+  // Pair each number with its best nearby code candidate: on the same line or
+  // the line directly below (the printed layout — the set code is never above
+  // the number). Ties break toward the longer (more plausible) number.
+  let best: { code: string; num: string; rank: number } | null = null;
+  for (const n of numbers) {
+    for (const c of codes) {
+      if (c.line !== n.line && c.line !== n.line + 1) continue;
+      const rank = c.line === n.line ? 0 : 1;
+      const better =
+        !best ||
+        rank < best.rank ||
+        (rank === best.rank && n.value.length > best.num.length);
+      if (better) {
+        best = { code: c.value, num: n.value, rank };
+      }
+    }
+  }
+
+  if (best) {
+    return { setCode: best.code, collectorNumber: stripLeadingZeros(best.num) };
+  }
+
+  // Last resort: OCR merged everything into one blob ("MH3259") — the token must
+  // end in a digit and be followed by 2+ digits, so a bare "MH3" never matches.
+  const compact = raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .match(/\b([A-Z]+[0-9])(\d{2,4})\b/) ??
+  raw.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').match(/\b([A-Z]+[0-9]{2})(\d{2,4})\b/);
+  if (compact) return { setCode: compact[1], collectorNumber: stripLeadingZeros(compact[2]) };
+
+  return null;
+}
+
+/** "0216" -> "216", "020/270" -> "20/270" (OCR often glues a leading zero on). */
+function stripLeadingZeros(num: string): string {
+  const slash = num.indexOf('/');
+  const main = slash === -1 ? num : num.slice(0, slash);
+  const rest = slash === -1 ? '' : '/' + num.slice(slash + 1);
+  return main.replace(/^0+(?=\d)/, '') + rest;
+}
+
+/**
+ * Type-line fragments that can leak into the name-bar crop when OCR merges lines.
+ * Card names never start with one of these followed by more text, so stripping a
+ * leading occurrence is safe (e.g. "Lightning Bolt" is untouched).
+ */
+const TYPE_LINE_PREFIX_RE = /^(?:basic\s+land|creature|planeswalker|battle|instant|sorcery|artifact|enchantment|land)\b[\s\-–—]*/i;
+
+/** Strips a trailing mana-cost token (e.g. "Lightning Strike 2R" -> "Lightning Strike"). */
+const TRAILING_MANA_RE = /\s+\d*[WUBRG]{1,6}$/;
+
+/** Whole lines that are just a mana cost ("3GW", "2R") or bare digits — never a card name. */
+const NON_NAME_LINE_RE = /^(\d*[WUBRG]{1,6}|\d+)$/i;
+
+function cleanNameLine(line: string): string | undefined {
+  // Keep only characters that can appear in card names (letters incl. accents,
+  // digits, spaces, apostrophes, commas, hyphens)
+  let s = line
+    .replace(/[^\p{L}\p{N},.'’\-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return undefined;
+
+  // Drop a type-line fragment or trailing mana cost if OCR merged them in
+  s = s.replace(TYPE_LINE_PREFIX_RE, '').replace(TRAILING_MANA_RE, '').trim();
+  if (s.length < 3) return undefined;
+
+  return s;
+}
+
+/**
+ * Extracts a card-name candidate from the OCR text of the top name-bar region.
+ * Border noise and frame artifacts produce short garbage lines, while the real
+ * name is the letter-richest line in the crop — so the highest-scoring line
+ * wins (ties keep the first, i.e. the topmost, which matters when the type
+ * line leaks into the crop below the name).
+ */
+export function extractCardName(raw: string): string | undefined {
+  if (!raw) return undefined;
+
+  const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  let bestLine: string | undefined;
+  let bestScore = 0;
+
+  for (const line of lines) {
+    // Skip mana-cost / number-only lines (e.g. the cost printed right of the name bar)
+    if (NON_NAME_LINE_RE.test(line.replace(/[^\p{L}\p{N}]/gu, ''))) continue;
+    const name = cleanNameLine(line);
+    if (!name) continue;
+
+    const score = (name.match(/\p{L}/gu) ?? []).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestLine = name;
+    }
+  }
+
+  return bestScore >= 3 ? bestLine : undefined;
+}
