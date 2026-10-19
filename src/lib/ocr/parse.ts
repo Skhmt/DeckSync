@@ -58,11 +58,14 @@ export function parseSetAndCollector(raw: string): SetCodeParse | null {
 
   // Pair each number with its best nearby code candidate: on the same line or
   // the line directly below (the printed layout — the set code is never above
-  // the number). Ties break toward the longer (more plausible) number.
+  // the number). A token can never be both, so identical pairs are rejected
+  // (e.g. rules-text noise reading "4A" as one token). Ties break toward the
+  // longer (more plausible) number.
   let best: { code: string; num: string; rank: number } | null = null;
   for (const n of numbers) {
     for (const c of codes) {
       if (c.line !== n.line && c.line !== n.line + 1) continue;
+      if (c.value === n.value) continue;
       const rank = c.line === n.line ? 0 : 1;
       const better =
         !best ||
@@ -130,9 +133,10 @@ function cleanNameLine(line: string): string | undefined {
 /**
  * Extracts a card-name candidate from the OCR text of the top name-bar region.
  * The card name is always the first real text on the card — frame noise sits
- * above it (short fragments) and art texture below it (random words) — so the
- * earliest word-like line wins: tokens of 4+ letters count positively, short
- * fragments negatively, and a line needs a score of at least 3.
+ * above it and art texture below it — so the earliest word-like line wins:
+ * only tokens of 4+ letters count toward the score (short fragments are
+ * ignored rather than penalized, since OCR glues cost/icon garbage onto the
+ * end of real name lines), and a line needs a score of at least 6.
  */
 export function extractCardName(raw: string): string | undefined {
   if (!raw) return undefined;
@@ -147,10 +151,36 @@ export function extractCardName(raw: string): string | undefined {
     let score = 0;
     for (const tok of name.split(/\s+/)) {
       const letters = (tok.match(/\p{L}/gu) ?? []).length;
-      score += letters >= 4 ? letters : -letters;
+      if (letters >= 4) score += letters;
     }
-    if (score >= 3) return name;
+    if (score >= 6) return name;
   }
 
   return undefined;
+}
+
+/**
+ * Picks the best card name from Scryfall search hits given an OCR'd reading.
+ * Scores each candidate by how many of its words appear verbatim in the
+ * reading (tokens shorter than 4 letters are ignored — they're usually noise);
+ * ties break toward the shorter, more likely exact name. Returns null when no
+ * candidate shares a word with the reading.
+ */
+export function pickBestNameMatch(ocrText: string, candidates: string[]): string | null {
+  const tokens = new Set(
+    ocrText.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 4)
+  );
+
+  let best: { name: string; score: number } | null = null;
+  for (const name of candidates) {
+    const words = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    let score = 0;
+    for (const w of words) if (tokens.has(w)) score++;
+    if (score === 0) continue;
+    if (!best || score > best.score || (score === best.score && name.length < best.name.length)) {
+      best = { name, score };
+    }
+  }
+
+  return best?.name ?? null;
 }

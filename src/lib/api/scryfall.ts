@@ -1,5 +1,6 @@
 import type { ScryfallCard, DeckCardItem } from '../types';
 import { getCachedCard, cacheCards } from '../storage/db';
+import { pickBestNameMatch } from '../ocr/parse';
 
 const SCRYFALL_COLLECTION_URL = 'https://api.scryfall.com/cards/collection';
 const SCRYFALL_SEARCH_URL = 'https://api.scryfall.com/cards/search';
@@ -452,10 +453,12 @@ export async function lookupCardByPrinting(
 
 /**
  * Fuzzy name lookup for the card-name fallback path (older cards don't print a
- * set code). Uses the local IndexedDB cache first. OCR sometimes glues garbage
- * onto the reading — part of the mana cost or type line at the end, or an icon
- * artifact (e.g. the graveyard glyph) at the start — so when the full reading
- * misses, trailing then leading words are dropped one at a time (3 attempts).
+ * set code). Uses the local IndexedDB cache first. OCR glues garbage onto the
+ * reading — part of the mana cost or type line at the end, an icon artifact
+ * (e.g. the graveyard glyph) at the start — so it tries:
+ *   1. fuzzy on the full reading, then with trailing/leading words dropped;
+ *   2. a prefix search anchored on the first substantial word(s), scoring the
+ *      hits by word overlap (handles long garbage tails fuzzy can't absorb).
  */
 export async function lookupCardByName(name: string): Promise<ScryfallCard | null> {
   const cached = await getCachedCard(name);
@@ -486,8 +489,33 @@ export async function lookupCardByName(name: string): Promise<ScryfallCard | nul
       console.warn('Scryfall fuzzy name lookup failed:', err);
       return null;
     }
-    // Be polite to the 1 req/s rate limit between attempts
+    // Be polite to the rate limit between attempts
     await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+  }
+
+  // Prefix search anchored on the first substantial word(s) of the reading.
+  const anchors = words
+    .map(w => w.replace(/[^a-z0-9]/gi, '').toLowerCase())
+    .filter(w => w.length >= 4)
+    .slice(0, 2);
+
+  for (const anchor of anchors) {
+    try {
+      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+      const response = await fetchScryfall(`${SCRYFALL_SEARCH_URL}?q=${encodeURIComponent(`name:${anchor}*`)}&unique=art`);
+      if (!response.ok) continue;
+      const json: ScryfallSearchResponse = await response.json();
+      const hits = json.data ?? [];
+      const bestName = pickBestNameMatch(name, hits.map(h => h.name));
+      if (bestName) {
+        const card = normalizeCard(hits.find(h => h.name === bestName)!);
+        await cacheCards([card]);
+        return card;
+      }
+    } catch (err) {
+      console.warn('Scryfall prefix name search failed:', err);
+      return null;
+    }
   }
 
   return null;

@@ -2,6 +2,7 @@
   import { deckStore } from '../state/deck.svelte';
   import { getCardImageUrl, identifyScannedCard, matchDeckCard } from '../api/scryfall';
   import {
+    CARD_ZONE,
     NAME_REGION,
     SET_REGION,
     captureFrame,
@@ -36,6 +37,13 @@
 
   const foundCard = $derived(outcome?.card ?? null);
   const foundDeckCard = $derived(outcome?.deckCard ?? null);
+
+  // Map card-zone-relative region fractions onto full-frame fractions, so the
+  // framing guide overlays line up exactly with what the OCR crops.
+  const zoneX = (r: number) => CARD_ZONE.x0 + r * (CARD_ZONE.x1 - CARD_ZONE.x0);
+  const zoneY = (r: number) => CARD_ZONE.y0 + r * (CARD_ZONE.y1 - CARD_ZONE.y0);
+  const zoneW = (r: number) => r * (CARD_ZONE.x1 - CARD_ZONE.x0);
+  const zoneH = (r: number) => r * (CARD_ZONE.y1 - CARD_ZONE.y0);
 
   // --- Camera lifecycle -------------------------------------------------
 
@@ -359,16 +367,19 @@
           <!-- Framing guide (mirrors the OCR crop regions) -->
           {#if phase === 'live'}
             <div class="absolute inset-0 pointer-events-none">
-              <div class="absolute left-[3%] right-[3%] top-[2.5%] bottom-[2.5%] rounded-lg border-2 border-dashed border-white/40"></div>
+              <div
+                class="absolute rounded-lg border-2 border-dashed border-white/40"
+                style="left: {CARD_ZONE.x0 * 100}%; top: {CARD_ZONE.y0 * 100}%; width: {(CARD_ZONE.x1 - CARD_ZONE.x0) * 100}%; height: {(CARD_ZONE.y1 - CARD_ZONE.y0) * 100}%;"
+              ></div>
               <div
                 class="absolute rounded-md border border-primary/70 bg-primary/10"
-                style="left: {NAME_REGION.x0 * 100}%; top: {NAME_REGION.y0 * 100}%; width: {(NAME_REGION.x1 - NAME_REGION.x0) * 100}%; height: {(NAME_REGION.y1 - NAME_REGION.y0) * 100}%;"
+                style="left: {zoneX(NAME_REGION.x0) * 100}%; top: {zoneY(NAME_REGION.y0) * 100}%; width: {zoneW(NAME_REGION.x1 - NAME_REGION.x0) * 100}%; height: {zoneH(NAME_REGION.y1 - NAME_REGION.y0) * 100}%;"
               >
                 <span class="absolute left-1 top-0.5 text-[9px] font-medium text-white/70 bg-black/40 rounded px-1">card name</span>
               </div>
               <div
                 class="absolute rounded-md border border-primary/70 bg-primary/10"
-                style="left: {SET_REGION.x0 * 100}%; top: {SET_REGION.y0 * 100}%; width: {(SET_REGION.x1 - SET_REGION.x0) * 100}%; height: {(SET_REGION.y1 - SET_REGION.y0) * 100}%;"
+                style="left: {zoneX(SET_REGION.x0) * 100}%; top: {zoneY(SET_REGION.y0) * 100}%; width: {zoneW(SET_REGION.x1 - SET_REGION.x0) * 100}%; height: {zoneH(SET_REGION.y1 - SET_REGION.y0) * 100}%;"
               >
                 <span class="absolute left-1 top-0.5 text-[9px] font-medium text-white/70 bg-black/40 rounded px-1">set code & #</span>
               </div>
@@ -412,7 +423,7 @@
           </button>
         </div>
         <p class="text-center text-[11px] text-white/40 mt-3 leading-snug">
-          Line the card up in the frame — its set code & number (bottom-left) or name (top) will be read.
+          Fit the card inside the dashed frame — you can hold the phone a bit farther away.
         </p>
       {:else if phase === 'camera_error'}
         <div class="flex flex-col items-center gap-3 text-white/80 py-4 px-6 text-center">
