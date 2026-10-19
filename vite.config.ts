@@ -30,7 +30,9 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,gz}'],
+        // The bundled tesseract wasm cores are ~3.9 MB each (default cap is 2 MiB)
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/api\.scryfall\.com\/.*/i,

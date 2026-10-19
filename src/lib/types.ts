@@ -103,3 +103,17 @@ export interface VerificationToast {
   action: 'found' | 'unfound';
 }
 
+/** Result of a camera scan, shown in the confirmation modal */
+export interface CardScanOutcome {
+  /** The printing resolved via Scryfall (null when identification failed) */
+  card: ScryfallCard | null;
+  /** The loaded-deck entry this card matched (null when not in the deck) */
+  deckCard: DeckCardItem | null;
+  /** Raw OCR text of the bottom-left set/collector region (debug aid) */
+  ocrSetRaw?: string;
+  /** Raw OCR text of the top name-bar region (debug aid) */
+  ocrNameRaw?: string;
+  /** Set when the scan itself failed (e.g. OCR engine could not load) */
+  error?: string;
+}
+

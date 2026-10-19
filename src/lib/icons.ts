@@ -24,6 +24,7 @@ import arrowsRotateIcon from "../assets/icons/arrows-rotate-solid-full.svg?raw";
 import clipboardCheckIcon from "../assets/icons/clipboard-check-solid-full.svg?raw";
 import xmarkIcon from "../assets/icons/xmark-solid-full.svg?raw";
 import circleQuestionIcon from "../assets/icons/circle-question-solid-full.svg?raw";
+import cameraIcon from "../assets/icons/camera-solid-full.svg?raw";
 
 /**
  * Prepare an inlined SVG string for use with {@html}:
@@ -72,3 +73,4 @@ export const flipIconSvg = inlineIcon(arrowsRotateIcon); // arrows-rotate
 export const clipboardCheckIconSvg = inlineIcon(clipboardCheckIcon); // clipboard-check
 export const xmarkIconSvg = inlineIcon(xmarkIcon); // xmark
 export const questionCircleIconSvg = inlineIcon(circleQuestionIcon); // circle-question
+export const cameraIconSvg = inlineIcon(cameraIcon); // camera
