@@ -11,7 +11,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.png'],
+      includeAssets: ['icon.png', 'card-data.json'],
       manifest: {
         name: 'DeckSync - MTG Deck Verification',
         short_name: 'DeckSync',
@@ -30,9 +30,11 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,gz}'],
-        // The bundled tesseract wasm cores are ~3.9 MB each (default cap is 2 MiB)
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // `json` covers public/card-data.json (the local card database)
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,gz,json}'],
+        // The bundled tesseract wasm cores are ~3.9 MB each and card-data.json
+        // (the local card database) is ~6 MB — above the default 2 MiB cap
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/api\.scryfall\.com\/.*/i,

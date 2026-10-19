@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "prepare:data": "node --max-old-space-size=4096 scripts/prepare-data.js",
+    "predev": "npm run prepare:data",
     "dev": "vite",
     "host": "vite --host",
+    "prebuild": "npm run prepare:data",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"

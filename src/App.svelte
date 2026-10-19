@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { deckStore } from './lib/state/deck.svelte';
+  import { ensureCardData } from './lib/data/cardData';
   import Header from './lib/components/Header.svelte';
   import FilterBar from './lib/components/FilterBar.svelte';
   import CardGrid from './lib/components/CardGrid.svelte';
@@ -27,6 +28,9 @@
   let filterBarHeight = $state(56);
 
   onMount(async () => {
+    // Load the local card database (card names + printings index) used by the
+    // scanner for free OCR validation — fails soft, lookups fall back to Scryfall.
+    void ensureCardData();
     // Attempt to restore prior session
     await deckStore.restoreSession();
   });

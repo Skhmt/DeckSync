@@ -185,3 +185,49 @@ export async function cacheCards(cards: ScryfallCard[]): Promise<void> {
   }
 }
 
+// The cardCache store is keyed by name, but the scanner resolves printings by
+// Scryfall id — so an id -> card index over the whole store is built lazily
+// (once per session) to make repeat scans zero-API-call lookups.
+let cardIdIndex: Map<string, ScryfallCard> | null = null;
+let cardIdIndexPromise: Promise<Map<string, ScryfallCard>> | null = null;
+
+function buildCardIdIndex(): Promise<Map<string, ScryfallCard>> {
+  if (!cardIdIndexPromise) {
+    cardIdIndexPromise = (async () => {
+      const db = await getDB();
+      const entries: CachedCardEntry[] = await new Promise((resolve, reject) => {
+        const tx = db.transaction('cardCache', 'readonly');
+        const req = tx.objectStore('cardCache').getAll();
+        req.onsuccess = () => resolve(req.result as CachedCardEntry[]);
+        req.onerror = () => reject(req.error);
+      });
+
+      const index = new Map<string, ScryfallCard>();
+      for (const entry of entries) {
+        // Placeholder cards ("custom-...") are never cached, but guard anyway
+        if (entry?.card?.id && !entry.card.id.startsWith('custom-')) {
+          index.set(entry.card.id, entry.card);
+        }
+      }
+      cardIdIndex = index;
+      return index;
+    })().catch(err => {
+      console.warn('Failed to build card id index:', err);
+      return new Map<string, ScryfallCard>();
+    });
+  }
+  return cardIdIndexPromise;
+}
+
+/** Looks up a previously cached card by its Scryfall id (null on miss). */
+export async function getCachedCardById(scryfallId: string): Promise<ScryfallCard | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) return null;
+  try {
+    const index = await buildCardIdIndex();
+    return index.get(scryfallId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+

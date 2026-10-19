@@ -1,6 +1,7 @@
 <script lang="ts">
   import { deckStore } from '../state/deck.svelte';
   import { getCardImageUrl, identifyScannedCard, matchDeckCard } from '../api/scryfall';
+  import { isCardDataReady } from '../data/cardData';
   import {
     CARD_ZONE,
     NAME_REGION,
@@ -153,7 +154,11 @@
       if (token !== scanToken) return;
 
       let card: ScryfallCard | null = null;
-      if (setRead.parsed && setRead.confidence >= 60) {
+      // The parsed corner is validated against the local printings map inside
+      // identifyScannedCard — free, no API call for unknown pairs — so a parse
+      // is worth passing through on every attempt. Without the database loaded,
+      // keep the old tesseract-confidence gate (the network lookup isn't free).
+      if (setRead.parsed && (isCardDataReady() || setRead.confidence >= 60)) {
         card = await identifyScannedCard({
           setCode: setRead.parsed.setCode,
           collectorNumber: setRead.parsed.collectorNumber
@@ -344,23 +349,40 @@
         if (read.parsed && read.confidence >= 60) break;
       }
 
-      // Pass 2 — name bar of every burst frame (fallback for older cards that
-      // don't print a set code, and as a candidate name for the printing lookup).
-      // The highest-confidence reading wins.
-      statusText = 'Reading card name...';
-      for (const frame of frames) {
-        const read = await recognizeNameRegion(frame);
+      let card: ScryfallCard | null = null;
+
+      // Pass 2a — when the local printings map confirms the parsed set + number,
+      // resolve directly by Scryfall id (IndexedDB cache first — often zero API
+      // calls) and skip the slow name-bar OCR entirely.
+      if (!card && bestSet?.parsed && isCardDataReady()) {
+        statusText = 'Matching set code & collector number...';
+        card = await identifyScannedCard({
+          setCode: bestSet.parsed.setCode,
+          collectorNumber: bestSet.parsed.collectorNumber
+        });
         if (token !== scanToken) return;
-        if (!nameRead || read.confidence > nameRead.confidence) nameRead = read;
       }
 
-      // Pass 3 — resolve the card on Scryfall (the only network step)
-      statusText = 'Looking up card on Scryfall...';
-      const card: ScryfallCard | null = await identifyScannedCard({
-        name: nameRead?.name,
-        setCode: bestSet?.parsed?.setCode,
-        collectorNumber: bestSet?.parsed?.collectorNumber
-      });
+      // Pass 2b — name bar of every burst frame (older cards without a printed
+      // set code, an unconfirmed corner read, or an id fetch that failed). The
+      // highest-confidence reading wins.
+      if (!card) {
+        statusText = 'Reading card name...';
+        for (const frame of frames) {
+          const read = await recognizeNameRegion(frame);
+          if (token !== scanToken) return;
+          if (!nameRead || read.confidence > nameRead.confidence) nameRead = read;
+        }
+
+        // Pass 3 — resolve the card. Validated against the local database first,
+        // so this is a network step only for readings that look real.
+        statusText = 'Looking up card on Scryfall...';
+        card = await identifyScannedCard({
+          name: nameRead?.name,
+          setCode: bestSet?.parsed?.setCode,
+          collectorNumber: bestSet?.parsed?.collectorNumber
+        });
+      }
       if (token !== scanToken) return;
 
       outcome = {

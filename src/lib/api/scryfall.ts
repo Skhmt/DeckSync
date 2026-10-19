@@ -1,6 +1,7 @@
 import type { ScryfallCard, DeckCardItem } from '../types';
-import { getCachedCard, cacheCards } from '../storage/db';
+import { getCachedCard, getCachedCardById, cacheCards } from '../storage/db';
 import { pickBestNameMatch } from '../ocr/parse';
+import { ensureCardData, findPrintingId, hasCardName, isCardDataReady } from '../data/cardData';
 
 const SCRYFALL_COLLECTION_URL = 'https://api.scryfall.com/cards/collection';
 const SCRYFALL_SEARCH_URL = 'https://api.scryfall.com/cards/search';
@@ -453,17 +454,16 @@ export async function lookupCardByPrinting(
 
 /**
  * Fuzzy name lookup for the card-name fallback path (older cards don't print a
- * set code). Uses the local IndexedDB cache first. OCR glues garbage onto the
- * reading — part of the mana cost or type line at the end, an icon artifact
- * (e.g. the graveyard glyph) at the start — so it tries:
- *   1. fuzzy on the full reading, then with trailing/leading words dropped;
+ * set code). Uses the local IndexedDB cache first, and — when the card database
+ * is loaded — validates the candidate readings against it before any network
+ * call: OCR noise that matches no known card name is rejected for free. OCR
+ * glues garbage onto the reading — part of the mana cost or type line at the
+ * end, an icon artifact (e.g. the graveyard glyph) at the start — so it tries:
+ *   1. fuzzy on each candidate (real-name candidates first), cache-checked;
  *   2. a prefix search anchored on the first substantial word(s), scoring the
  *      hits by word overlap (handles long garbage tails fuzzy can't absorb).
  */
 export async function lookupCardByName(name: string): Promise<ScryfallCard | null> {
-  const cached = await getCachedCard(name);
-  if (cached) return cached;
-
   const words = name.split(/\s+/).filter(Boolean);
   const candidates: string[] = [name];
   if (words.length > 1) {
@@ -478,7 +478,27 @@ export async function lookupCardByName(name: string): Promise<ScryfallCard | nul
     return true;
   });
 
-  for (const candidate of uniqueCandidates) {
+  // Free local validation before spending an API call: if no candidate reading
+  // is a real card name, this is OCR noise — bail out without hitting Scryfall.
+  // (Pass-through when the database isn't loaded, preserving legacy behavior.)
+  if (isCardDataReady() && !uniqueCandidates.some(c => hasCardName(c))) {
+    return null;
+  }
+
+  // Valid candidates first (in reading order) so the fuzzy loop succeeds on its
+  // first attempt instead of burning calls on garbage variants.
+  const ordered = isCardDataReady()
+    ? [
+        ...uniqueCandidates.filter(c => hasCardName(c)),
+        ...uniqueCandidates.filter(c => !hasCardName(c))
+      ]
+    : uniqueCandidates;
+
+  for (const candidate of ordered) {
+    // IndexedDB cache first — repeat scans of the same card cost zero API calls.
+    const cached = await getCachedCard(candidate);
+    if (cached) return cached;
+
     try {
       const response = await fetchScryfall(`${SCRYFALL_CARD_URL}/named?fuzzy=${encodeURIComponent(candidate)}`);
       if (!response.ok) continue; // fuzzy miss — try the next candidate
@@ -521,6 +541,27 @@ export async function lookupCardByName(name: string): Promise<ScryfallCard | nul
   return null;
 }
 
+/**
+ * Resolves a card by its Scryfall id (obtained from the local printings map).
+ * Checks the IndexedDB cache first, so repeat scans of a known printing cost
+ * zero API calls. Returns null when the fetch fails or 404s.
+ */
+export async function lookupCardById(scryfallId: string): Promise<ScryfallCard | null> {
+  const cached = await getCachedCardById(scryfallId);
+  if (cached) return cached;
+
+  try {
+    const response = await fetchScryfall(`${SCRYFALL_CARD_URL}/${encodeURIComponent(scryfallId)}`);
+    if (!response.ok) return null;
+    const card = normalizeCard((await response.json()) as ScryfallCard);
+    await cacheCards([card]);
+    return card;
+  } catch (err) {
+    console.warn('Scryfall id lookup failed:', err);
+    return null;
+  }
+}
+
 export interface ScanLookupInput {
   /** OCR'd card-name candidate from the top name bar */
   name?: string;
@@ -531,14 +572,32 @@ export interface ScanLookupInput {
 }
 
 /**
- * Resolves a photographed card: exact printing first (set code + collector
- * number), fuzzy name lookup as the fallback for older cards without a printed
- * set code. Returns null when nothing could be identified.
+ * Resolves a photographed card. When the local card database is loaded, the
+ * parsed values are validated against it first — free, no API call:
+ *   - set + collector number in the printings map -> resolve by Scryfall id
+ *     (IndexedDB cache first, otherwise a single GET /cards/{id});
+ *   - set + collector number NOT in the map -> OCR noise, skip the printing
+ *     lookup entirely and fall back to the name path;
+ *   - name not matching any known card -> OCR noise, return null.
+ * Without the database (first run before it was precached) the legacy
+ * network-first paths are used unchanged.
  */
 export async function identifyScannedCard(input: ScanLookupInput): Promise<ScryfallCard | null> {
+  await ensureCardData(); // no-op once loaded; keeps validation data warm
+
   if (input.setCode && input.collectorNumber) {
-    const byPrinting = await lookupCardByPrinting(input.setCode, input.collectorNumber, input.name);
-    if (byPrinting) return byPrinting;
+    if (isCardDataReady()) {
+      const id = findPrintingId(input.setCode, input.collectorNumber);
+      if (id) {
+        const byId = await lookupCardById(id);
+        if (byId) return byId;
+        // Id fetch failed (e.g. network hiccup) — fall through to the name path
+      }
+      // Unknown printing: never spend an API call on it
+    } else {
+      const byPrinting = await lookupCardByPrinting(input.setCode, input.collectorNumber, input.name);
+      if (byPrinting) return byPrinting;
+    }
   }
 
   if (input.name) {
