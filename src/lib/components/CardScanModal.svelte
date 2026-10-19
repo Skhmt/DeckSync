@@ -24,7 +24,9 @@
   let outcome = $state<CardScanOutcome | null>(null);
 
   let videoEl: HTMLVideoElement | null = $state(null);
-  let stream: MediaStream | null = null;
+  // Reactive on purpose: the attach $effect below must re-run both when the
+  // stream arrives (first open) and when the <video> element remounts (retry).
+  let stream = $state<MediaStream | null>(null);
   let videoAspect = $state(4 / 3);
 
   // A "snap" is a short burst of frames captured back-to-back (invisible to the
@@ -221,14 +223,16 @@
 
     const previousCount = deckCard.verifiedCount;
     deckStore.incrementCard(deckCard.id);
-    // Reuse the shared undo toast so a misclick can be reverted
+    // Reuse the shared undo toast so a misclick can be reverted (it renders
+    // above the scanner, so it stays visible while scanning continues)
     deckStore.verificationToast = {
       cardId: deckCard.id,
       cardName: deckCard.name,
       previousCount,
       action: 'found'
     };
-    handleClose();
+    // Stay in the scanner so the next card can be photographed right away.
+    handleRetry();
   }
 
   function handleRetry() {
@@ -315,7 +319,7 @@
                 <span class="w-3.5 h-3.5 shrink-0">{@html checkIconSvg}</span>
                 Accept
               </button>
-              <button onclick={handleClose} class="btn btn-outline btn-sm flex-1 gap-1.5">
+              <button onclick={handleRetry} class="btn btn-outline btn-sm flex-1 gap-1.5">
                 <span class="w-3.5 h-3.5 shrink-0">{@html xmarkIconSvg}</span>
                 Wrong Card
               </button>
