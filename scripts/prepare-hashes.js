@@ -143,7 +143,9 @@ async function fetchJson(url) {
       await sleep(API_DELAY_MS * (attempt + 2));
       continue;
     }
-    throw new Error(`HTTP ${response.status} for ${url}`);
+    const err = new Error(`HTTP ${response.status} for ${url}`);
+    err.status = response.status; // lets callers tell "no results" (404) apart from real failures
+    throw err;
   }
 }
 
@@ -157,29 +159,41 @@ async function searchPrintings(name) {
   const multiFaced = clean.includes('//');
   const variants = multiFaced ? [clean, clean.replace('//', ' / ')] : [clean];
 
-  let lastErr;
   for (const variant of variants) {
+    let cards;
     try {
-      return await searchPrintingsQuery(variant);
+      cards = await searchPrintingsQuery(variant);
     } catch (err) {
-      lastErr = err; // no results for this spelling — try the next one
+      if (!multiFaced) throw err; // single-faced name — surface real errors so they retry next run
+      continue;                   // multi-faced: this spelling failed, try the next form
     }
+    if (cards.length > 0 || !multiFaced) return cards;
+    // Multi-faced name with no results under this spelling — try the next form.
   }
 
-  if (multiFaced) {
-    // Front-face-only search can also match unrelated single-faced cards that
-    // share the front name, so keep only genuinely multi-faced results.
-    const front = clean.split('//')[0].trim();
-    return (await searchPrintingsQuery(front)).filter(c => (c.card_faces?.length ?? 0) >= 2);
-  }
-  throw lastErr;
+  // Only reached for multi-faced names where neither full-name spelling matched:
+  // fall back to the front face, keeping only genuinely multi-faced results. A
+  // front-face-only search can also match unrelated single-faced cards that share
+  // the front name, so filter those out. (A 404 here yields [] — nothing to hash.)
+  const front = clean.split('//')[0].trim();
+  return (await searchPrintingsQuery(front)).filter(c => (c.card_faces?.length ?? 0) >= 2);
 }
 
 async function searchPrintingsQuery(name) {
   const q = encodeURIComponent(`name:"${name}"`);
   const cards = [];
   for (let page = 1; page <= MAX_SEARCH_PAGES; page++) {
-    const json = await fetchJson(`${SCRYFALL_SEARCH_URL}?q=${q}&unique=prints&page=${page}`);
+    let json;
+    try {
+      json = await fetchJson(`${SCRYFALL_SEARCH_URL}?q=${q}&unique=prints&page=${page}`);
+    } catch (err) {
+      // Scryfall answers a name search with 404 when no card matches that exact
+      // name. That is a terminal "nothing to hash" outcome, not a transient
+      // failure — return what we have (empty on page 1) instead of throwing so
+      // the caller marks the name done and moves on rather than retrying forever.
+      if (err.status === 404) return cards;
+      throw err;
+    }
     const data = json.data ?? [];
     cards.push(...data);
     if (!json.has_more || data.length === 0) break;
@@ -362,7 +376,7 @@ async function processName(name, ctx) {
   }
   if (failed === 0) appendLine(DONE_NAMES_FILE, { type: 'done', name });
   ctx.entriesByName.delete(key); // no longer needed — frees memory on long runs
-  return { added, skipped, failed };
+  return { added, skipped, failed, noMatch: printings.length === 0 };
 }
 
 /** All unique card names from the cached MTGJSON AtomicCards download. */
@@ -493,7 +507,10 @@ async function main() {
   }
 
   let targets;
-  if (process.env.DECKSYNC_HASH_ALL === '1') {
+  // NOTE: on Windows, `set DECKSYNC_HASH_ALL=1 && node ...` (as used by the
+  // npm script) assigns the value "1" WITH a trailing space — cmd folds the
+  // space before && into the variable. Trim so the check is robust to that.
+  if ((process.env.DECKSYNC_HASH_ALL || '').trim() === '1') {
     targets = await allCardNames();
   } else if (process.env.DECKSYNC_HASH_CARDS) {
     targets = process.env.DECKSYNC_HASH_CARDS.split(',').map(s => s.trim()).filter(Boolean);
@@ -502,31 +519,78 @@ async function main() {
   }
 
   const toProcess = [...new Set(targets.filter(n => !doneNames.has(normalizeCardName(n))))];
+  const total = toProcess.length;
   console.log(
     `[prepare-hashes] ${entryCount} entries on file, ` +
-      `${targets.length - toProcess.length}/${targets.length} names complete, ${toProcess.length} to process`
+      `${targets.length - toProcess.length}/${targets.length} names complete, ${total} to process`
   );
+
+  // A full run takes hours. stdout can be block-buffered in some terminals
+  // (npm/PowerShell), so also append a heartbeat to a log file that flushes to
+  // disk immediately — watch live with:
+  //   Get-Content -Wait scripts/.cache/prepare-hashes-progress.log
+  const progressLog = path.join(ROOT, 'scripts', '.cache', 'prepare-hashes-progress.log');
+  writeFileSync(progressLog, ''); // fresh log for this run
 
   let added = 0;
   let skipped = 0;
+  let noMatch = 0;
+  let failedNames = 0;
+  let processed = 0;
+  let currentName = '(starting)';
+  const statusLine = () => {
+    const elapsed = (Date.now() - started) / 1000;
+    const rate = elapsed > 0 ? processed / elapsed : 0; // names per second
+    const leftMin = rate > 0 ? (total - processed) / rate / 60 : 0;
+    return `[prepare-hashes] ${processed}/${total} ` +
+      `(${Math.round((processed / total) * 100)}%) — +${added} hashes, ${noMatch} no-match, ` +
+      `${failedNames} failed — ${elapsed.toFixed(0)}s elapsed` +
+      (rate > 0 ? `, ~${leftMin.toFixed(0)} min left` : '') +
+      ` — on "${currentName}"`;
+  };
+  // Time-based heartbeat: fires every 15s even while a single name is being
+  // fetched, so a slow or hung request (up to FETCH_TIMEOUT_MS = 2min) never
+  // looks like the run is stuck. setInterval callbacks fire between awaits.
+  const ticker = setInterval(() => {
+    const msg = statusLine();
+    console.log(msg);
+    appendFileSync(progressLog, msg + '\n');
+  }, 15000);
+  {
+    const msg = statusLine(); // immediate first line so the log is never empty
+    console.log(msg);
+    appendFileSync(progressLog, msg + '\n');
+  }
+
   for (const name of toProcess) {
+    currentName = name;
     try {
       const res = await processName(name, { entriesByName, processedKeys });
       added += res.added;
       skipped += res.skipped;
-      console.log(
-        `[prepare-hashes]   ${name}: +${res.added} entries` +
-          (res.skipped ? `, ${res.skipped} faces already done` : '') +
-          (res.failed ? `, ${res.failed} FAILED — will retry next run` : '')
-      );
+      if (res.noMatch) {
+        noMatch++; // Scryfall has no card by this exact name — marked done, nothing to retry
+      } else {
+        if (res.failed) failedNames++;
+        console.log(
+          `[prepare-hashes]   ${name}: +${res.added} entries` +
+            (res.skipped ? `, ${res.skipped} faces already done` : '') +
+            (res.failed ? `, ${res.failed} FAILED — will retry next run` : '')
+        );
+      }
     } catch (err) {
-      console.warn(`[prepare-hashes]   ${name}: FAILED (${err.message}) — skipped, will retry next run`);
+      failedNames++;
+      console.warn(`[prepare-hashes]   ${name}: FAILED (${err.message}) — will retry next run`);
     }
+    processed++;
   }
+  clearInterval(ticker);
 
   console.log(
     `[prepare-hashes] done: ${entryCount + added} entries in ${path.relative(ROOT, OUT_FILE)}, ` +
-      `${added} new this run (${skipped} faces skipped as already hashed) in ${((Date.now() - started) / 1000).toFixed(1)}s`
+      `${added} new this run (${skipped} faces skipped as already hashed), ` +
+      `${noMatch} names had no Scryfall match (marked done), ${failedNames} names failed — ` +
+      `in ${((Date.now() - started) / 1000).toFixed(1)}s`
   );
 }
 
