@@ -12,7 +12,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.png', 'card-data.json', 'card-hashes.jsonl'],
+      includeAssets: ['icon.png'],
       manifest: {
         name: 'DeckSync - MTG Deck Verification',
         short_name: 'DeckSync',
@@ -31,12 +31,46 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // `json`/`jsonl` cover public/card-data.json and card-hashes.jsonl
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,gz,json,jsonl}'],
-        // The bundled tesseract wasm cores are ~3.9 MB each and card-data.json
-        // (the local card database) is ~6 MB — above the default 2 MiB cap
-        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        // Precache only the app shell (built JS/CSS/HTML + icons). The large,
+        // growing assets — Tesseract OCR cores/traineddata and the local card
+        // database + pHash index — are runtime-cached below instead of being
+        // precached. Keeping them out of the precache manifest means it never
+        // has to grow with those files, so Workbox's per-file size cap stops
+        // being a constraint even as the OCR assets get bigger.
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['tess/**', 'card-data.json', 'card-hashes.jsonl'],
+        // The largest precached file is now an app bundle (not a Tesseract asset),
+        // so the default 2 MiB cap would usually suffice; this headroom only
+        // guards against an unusually large chunk being silently dropped.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
+          // Tesseract worker + wasm cores + traineddata. Fetched/importScripts'd
+          // by the OCR worker on first use; cache-first so OCR works offline after
+          // the first scan. Long-lived — these only change when tesseract.js is
+          // upgraded (the self-contained *.wasm.js loaders embed their own binary,
+          // so no separate external .wasm files are ever requested).
+          {
+            urlPattern: /\/tess\/.+$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tess-assets',
+              expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          // Local card database + pHash index. Served from the app origin and
+          // regenerated on build; stale-while-revalidate keeps them available
+          // offline while refreshing in the background when online (so newly
+          // added cards are picked up without a hard cache clear).
+          {
+            urlPattern: /\/(card-data\.json|card-hashes\.jsonl)$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'card-data',
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
           {
             urlPattern: /^https:\/\/api\.scryfall\.com\/.*/i,
             handler: 'NetworkFirst',
