@@ -11,7 +11,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.png', 'card-data.json'],
+      includeAssets: ['icon.png', 'card-data.json', 'card-hashes.jsonl'],
       manifest: {
         name: 'DeckSync - MTG Deck Verification',
         short_name: 'DeckSync',
@@ -30,8 +30,8 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // `json` covers public/card-data.json (the local card database)
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,gz,json}'],
+        // `json`/`jsonl` cover public/card-data.json and card-hashes.jsonl
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,gz,json,jsonl}'],
         // The bundled tesseract wasm cores are ~3.9 MB each and card-data.json
         // (the local card database) is ~6 MB — above the default 2 MiB cap
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
