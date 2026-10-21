@@ -33,9 +33,9 @@
             class="join-item btn btn-xs sm:btn-sm font-medium transition-all px-1.5 sm:px-3 {deckStore.filterMode === opt.id ? 'btn-primary shadow-xs' : 'btn-ghost'}"
             onclick={() => deckStore.filterMode = opt.id}
           >
-            <span class="hidden sm:inline">{opt.label}</span>
+            <span class="hidden sm:inline min-w-[5rem]">{opt.label}</span>
             <span class="sm:hidden">{opt.shortLabel}</span>
-            <span class="badge badge-xs {deckStore.filterMode === opt.id ? 'badge-primary-content text-primary' : 'badge-neutral'}">
+            <span class="badge badge-xs tabular-nums justify-center min-w-[1.75rem] {deckStore.filterMode === opt.id ? 'badge-primary-content text-primary' : 'badge-neutral'}">
               {opt.count ?? 0}
             </span>
           </button>

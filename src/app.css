@@ -45,8 +45,12 @@
 }
 
 /* Mobile & Touch Optimizations */
+/* Reserve vertical scrollbar space so the layout never shifts when the
+   document scrollbar appears/disappears (e.g. switching between a tall
+   Full Deck view and a short empty Found view). */
 html {
   -webkit-tap-highlight-color: transparent;
+  scrollbar-gutter: stable;
 }
 
 body {
