@@ -1,7 +1,8 @@
 <script lang="ts">
   import { deckStore } from '../state/deck.svelte';
-  import { getCardImageUrl, identifyScannedCard, matchDeckCard } from '../api/scryfall';
+  import { getCardImageUrl, identifyScannedCard, lookupCardById, matchDeckCard } from '../api/scryfall';
   import { isCardDataReady } from '../data/cardData';
+  import { ensureCardHashes } from '../data/cardHashes';
   import {
     CARD_ZONE,
     NAME_REGION,
@@ -11,6 +12,7 @@
     recognizeNameRegion,
     recognizeSetRegion
   } from '../ocr/cardScanner';
+  import { identifyByHash } from '../ocr/hashScanner';
   import type { SetCodeParse } from '../ocr/parse';
   import type { CardScanOutcome, DeckCardItem, ScryfallCard } from '../types';
   import { cameraIconSvg, checkIconSvg, warningIconSvg, xmarkIconSvg } from '../icons';
@@ -89,6 +91,7 @@
 
     // Warm up the OCR engine in the background so the first scan is snappy
     void initScanner().catch(err => console.warn('OCR engine failed to initialize:', err));
+    void ensureCardHashes(); // warm the pHash index so the first snap can use it
 
     return () => {
       scanToken++;
@@ -148,6 +151,15 @@
 
     try {
       const frame = captureFrame(videoEl);
+
+      // Fastest channel first — pHash against the local index (offline, ~ms).
+      // Only when it finds nothing do we spend tesseract time on OCR.
+      const hashResult = await hashChannel([frame], token);
+      if (token !== scanToken) return;
+      if (hashResult.card) {
+        handleContinuousHit(hashResult.card);
+        return;
+      }
 
       // Fast path — bottom-left corner only (small crop, fast)
       const setRead = await recognizeSetRegion(frame);
@@ -330,20 +342,49 @@
 
   // --- Scan pipeline ------------------------------------------------------
 
-  async function runScan(frames: HTMLCanvasElement[]) {
-    const token = ++scanToken;
-    phase = 'processing';
-    statusText = 'Reading set code & collector number...';
+  /** Result of one identification channel (pHash or OCR). */
+  interface ChannelResult {
+    card: ScryfallCard | null;
+    method: 'ocr' | 'hash';
+    ocrSetRaw?: string;
+    ocrNameRaw?: string;
+    error?: string;
+  }
 
+  /**
+   * Hash channel — pHash of the art region matched against the local index.
+   * Offline and fast (typically well under 100 ms); resolves a null card when
+   * nothing matches closely enough so the OCR channel can take over.
+   */
+  async function hashChannel(frames: HTMLCanvasElement[], token: number): Promise<ChannelResult> {
+    try {
+      const match = await identifyByHash(frames, videoAspect);
+      if (!match) return { card: null, method: 'hash' };
+      const card = await lookupCardById(match.entry.id);
+      if (token !== scanToken) return { card: null, method: 'hash' };
+      return { card, method: 'hash' };
+    } catch (err) {
+      console.warn('Hash identification failed:', err);
+      return { card: null, method: 'hash' };
+    }
+  }
+
+  /** OCR channel — tesseract pipeline: corner first, name bar as fallback. */
+  async function ocrPipeline(frames: HTMLCanvasElement[], token: number): Promise<ChannelResult> {
     let bestSet: { frame: HTMLCanvasElement; text: string; confidence: number; parsed: SetCodeParse | null } | null = null;
     let nameRead: { text: string; confidence: number; name?: string } | null = null;
+
+    // The hash channel may win first — never touch the UI after that.
+    const setStatus = (t: string) => {
+      if (token === scanToken && phase === 'processing') statusText = t;
+    };
 
     try {
       // Pass 1 — bottom-left corner of every burst frame (small crop, fast).
       // A confident parseable read is enough; no need to OCR the rest.
       for (const frame of frames) {
         const read = await recognizeSetRegion(frame);
-        if (token !== scanToken) return;
+        if (token !== scanToken) return { card: null, method: 'ocr' };
         if (!bestSet || read.confidence > bestSet.confidence) {
           bestSet = { frame, text: read.text, confidence: read.confidence, parsed: read.parsed };
         }
@@ -356,52 +397,81 @@
       // resolve directly by Scryfall id (IndexedDB cache first — often zero API
       // calls) and skip the slow name-bar OCR entirely.
       if (!card && bestSet?.parsed && isCardDataReady()) {
-        statusText = 'Matching set code & collector number...';
+        setStatus('Matching set code & collector number...');
         card = await identifyScannedCard({
           setCode: bestSet.parsed.setCode,
           collectorNumber: bestSet.parsed.collectorNumber
         });
-        if (token !== scanToken) return;
+        if (token !== scanToken) return { card: null, method: 'ocr' };
       }
 
       // Pass 2b — name bar of every burst frame (older cards without a printed
       // set code, an unconfirmed corner read, or an id fetch that failed). The
       // highest-confidence reading wins.
       if (!card) {
-        statusText = 'Reading card name...';
+        setStatus('Reading card name...');
         for (const frame of frames) {
           const read = await recognizeNameRegion(frame);
-          if (token !== scanToken) return;
+          if (token !== scanToken) return { card: null, method: 'ocr' };
           if (!nameRead || read.confidence > nameRead.confidence) nameRead = read;
         }
 
         // Pass 3 — resolve the card. Validated against the local database first,
         // so this is a network step only for readings that look real.
-        statusText = 'Looking up card on Scryfall...';
+        setStatus('Looking up card on Scryfall...');
         card = await identifyScannedCard({
           name: nameRead?.name,
           setCode: bestSet?.parsed?.setCode,
           collectorNumber: bestSet?.parsed?.collectorNumber
         });
       }
-      if (token !== scanToken) return;
 
-      outcome = {
+      return {
         card,
-        deckCard: card ? matchDeckCard(deckStore.cards, card) ?? null : null,
+        method: 'ocr',
         ocrSetRaw: bestSet?.text || undefined,
         ocrNameRaw: nameRead?.text || undefined
       };
     } catch (err) {
       console.error('Card scan failed:', err);
-      outcome = {
+      return {
         card: null,
-        deckCard: null,
+        method: 'ocr',
         ocrSetRaw: bestSet?.text || undefined,
         ocrNameRaw: nameRead?.text || undefined,
         error: err instanceof Error ? err.message : 'Something went wrong while scanning.'
       };
     }
+  }
+
+  async function runScan(frames: HTMLCanvasElement[]) {
+    const token = ++scanToken;
+    phase = 'processing';
+    statusText = 'Reading set code & collector number...';
+
+    // Two channels race on the same frames — pHash (fast, offline) and OCR.
+    // Whichever finds a card first wins; if it comes up empty, the other gets
+    // its turn before we report failure.
+    const tagged = [
+      hashChannel(frames, token).then(r => ({ m: 'hash' as const, r })),
+      ocrPipeline(frames, token).then(r => ({ m: 'ocr' as const, r }))
+    ];
+    const settled: Partial<Record<'hash' | 'ocr', ChannelResult>> = {};
+    while (Object.keys(settled).length < 2 && !settled.hash?.card && !settled.ocr?.card) {
+      const t = await Promise.race(tagged);
+      settled[t.m] = t.r;
+    }
+
+    const winner = settled.hash?.card ? settled.hash : settled.ocr?.card ? settled.ocr : null;
+    const ocr = settled.ocr;
+    outcome = {
+      card: winner?.card ?? null,
+      deckCard: winner?.card ? matchDeckCard(deckStore.cards, winner.card) ?? null : null,
+      ocrSetRaw: ocr?.ocrSetRaw,
+      ocrNameRaw: ocr?.ocrNameRaw,
+      method: winner?.method,
+      error: winner ? undefined : (ocr?.error ?? 'Could not identify the card. Try better lighting or a steadier hold.')
+    };
 
     if (token === scanToken) phase = 'result';
   }
