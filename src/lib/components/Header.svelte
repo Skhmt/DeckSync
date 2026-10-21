@@ -60,7 +60,7 @@
       label: "Blue",
     },
     B: {
-      bg: "bg-neutral-500",
+      bg: "bg-neutral-400",
       text: "text-black",
       ring: "ring-neutral-500/80",
       label: "Black",
@@ -114,7 +114,9 @@
               {deckStore.deckName || "DeckSync"}
             </h1>
             {#if deckStore.cards.length > 0}
-              <span class="badge badge-xs sm:badge-sm badge-neutral shrink-0 font-mono">
+              <span
+                class="badge badge-xs sm:badge-sm badge-neutral shrink-0 font-mono"
+              >
                 {deckStore.totalVerifiedCards}/{deckStore.totalExpectedCards}
                 <span class="hidden sm:inline ml-0.5">Verified</span>
               </span>
@@ -181,7 +183,8 @@
         <label
           for="format-select"
           class="text-xs font-semibold text-base-content/70 hidden lg:inline"
-        >Format:</label>
+          >Format:</label
+        >
         <select
           id="format-select"
           class="select select-bordered select-xs sm:select-sm font-medium bg-base-100"
@@ -203,7 +206,11 @@
         >
           {#each deckStore.deckColorIdentity as color}
             <span
-              class="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shadow-xs ring-1 {colorStyles[color]?.bg || 'bg-base-300'} {colorStyles[color]?.text || 'text-base-content'} {colorStyles[color]?.ring || 'ring-base-400'}"
+              class="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shadow-xs ring-1 {colorStyles[
+                color
+              ]?.bg || 'bg-base-300'} {colorStyles[color]?.text ||
+                'text-base-content'} {colorStyles[color]?.ring ||
+                'ring-base-400'}"
               title={colorStyles[color]?.label || color}
             >
               {@html colorIcons[color] ?? ""}
@@ -222,7 +229,12 @@
           <span class="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 text-neutral-900"
             >{@html boltIconSvg}</span
           >
-          <span>{deckStore.gameChangerCount} <span class="hidden sm:inline">Game Changer{deckStore.gameChangerCount === 1 ? "" : "s"}</span><span class="sm:hidden">GC</span></span>
+          <span
+            >{deckStore.gameChangerCount}
+            <span class="hidden sm:inline"
+              >Game Changer{deckStore.gameChangerCount === 1 ? "" : "s"}</span
+            ><span class="sm:hidden">GC</span></span
+          >
         </button>
       {/if}
 
