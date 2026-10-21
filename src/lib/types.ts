@@ -119,6 +119,8 @@ export interface CardScanOutcome {
   ocrSetRaw?: string;
   /** Raw OCR text of the top name-bar region (debug aid) */
   ocrNameRaw?: string;
+  /** Which channel identified the card first (debug aid) */
+  method?: 'ocr' | 'hash';
   /** Set when the scan itself failed (e.g. OCR engine could not load) */
   error?: string;
 }
