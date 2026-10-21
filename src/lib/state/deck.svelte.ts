@@ -200,10 +200,13 @@ export class DeckState {
     let result = [...this.cards];
 
     // Filter by view filter (all / not_found / found)
+    // A multi-copy card counts as "found" once any copy is verified, so a
+    // partially-found card (e.g. 4/10 Forests) appears in both the "Found" and
+    // "Not Found" views until it is fully verified.
     if (this.filterMode === 'not_found') {
       result = result.filter(c => c.verifiedCount < c.targetCount);
     } else if (this.filterMode === 'found') {
-      result = result.filter(c => c.verifiedCount >= c.targetCount);
+      result = result.filter(c => c.verifiedCount > 0);
     }
 
     // Filter by search query
