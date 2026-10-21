@@ -15,16 +15,17 @@
  *
  * The index is an append-only stream: as each face image is hashed, its entry
  * line is appended to the END of card-hashes.jsonl immediately — nothing is
- * held in memory for the whole run and no finished work can be lost. A
- * `{"type":"done","name":...}` marker line is appended once every printing of
- * a name has been processed, and a side-car ledger (scripts/.cache/
- * hashes-progress.jsonl) records every face that was hashed (accepted or
- * dropped by dedup). Cancelling the run (Ctrl+C / kill) therefore never loses
- * progress: re-running resumes exactly where it left off — complete names are
- * skipped without a single API call, and partially done names only hash faces
- * that were not finished. Downloaded face images are cached in
- * scripts/.cache/hashes/, so even a lost index rebuilds without
- * re-downloading.
+ * held in memory for the whole run and no finished work can be lost. Resume
+ * state lives entirely in side-car ledgers under scripts/.cache/ so the served
+ * index stays lean (entry lines only, no bookkeeping): a name-level ledger
+ * (hashes-done.jsonl) records each name once every printing of it has been
+ * processed, and a face-level ledger (hashes-progress.jsonl) records every
+ * face that was hashed (accepted or dropped by dedup). Cancelling the run
+ * (Ctrl+C / kill) therefore never loses progress: re-running resumes exactly
+ * where it left off — complete names are skipped without a single API call,
+ * and partially done names only hash faces that were not finished. Downloaded
+ * face images are cached in scripts/.cache/hashes/, so even a lost index
+ * rebuilds without re-downloading.
  *
  * Target card list:
  *   - DECKSYNC_HASH_CARDS="Card A, Card B" — index exactly these names;
@@ -73,6 +74,10 @@ const LEGACY_OUT_FILE = path.join(ROOT, 'public', 'card-hashes.json');
 const CACHE_DIR = path.join(ROOT, 'scripts', '.cache', 'hashes');
 /** Face-level progress ledger (accepted + dropped faces) for cancel/resume. */
 const PROGRESS_FILE = path.join(ROOT, 'scripts', '.cache', 'hashes-progress.jsonl');
+/** Name-level completion ledger — names fully processed in an earlier run, so a
+ *  resume skips them without re-downloading/re-hashing. Kept out of the served
+ *  index (card-hashes.jsonl) to keep that artifact lean. */
+const DONE_NAMES_FILE = path.join(ROOT, 'scripts', '.cache', 'hashes-done.jsonl');
 
 const SCRYFALL_SEARCH_URL = 'https://api.scryfall.com/cards/search';
 const USER_AGENT = 'DeckSync/1.0 (pre-build hash preparation)';
@@ -355,7 +360,7 @@ async function processName(name, ctx) {
       }
     }
   }
-  if (failed === 0) appendLine(OUT_FILE, { type: 'done', name });
+  if (failed === 0) appendLine(DONE_NAMES_FILE, { type: 'done', name });
   ctx.entriesByName.delete(key); // no longer needed — frees memory on long runs
   return { added, skipped, failed };
 }
@@ -460,20 +465,24 @@ async function main() {
   mkdirSync(CACHE_DIR, { recursive: true });
 
   // Load existing progress. The index can grow to tens of MB, so it is parsed
-  // line by line; only per-name entries (for dedup seeding) and done markers
-  // are kept in memory.
+  // line by line; only per-name entries (for dedup seeding) are kept in memory.
   const records = readJsonl(OUT_FILE);
   const entriesByName = new Map(); // normalized name -> entry[]
   let entryCount = 0;
-  const doneNames = new Set();     // names fully processed in an earlier run
   for (const rec of records) {
-    if (rec?.type === 'done' && typeof rec.name === 'string') {
-      doneNames.add(normalizeCardName(rec.name));
-    } else if (rec?.id && rec.hashes && typeof rec.name === 'string') {
+    if (rec?.id && rec.hashes && typeof rec.name === 'string') {
       entryCount++;
       const key = normalizeCardName(rec.name);
       if (!entriesByName.has(key)) entriesByName.set(key, []);
       entriesByName.get(key).push(rec);
+    }
+  }
+  // Name-level completion ledger (kept out of the served index): names fully
+  // processed in an earlier run are skipped on resume.
+  const doneNames = new Set();
+  for (const rec of readJsonl(DONE_NAMES_FILE)) {
+    if (rec?.type === 'done' && typeof rec.name === 'string') {
+      doneNames.add(normalizeCardName(rec.name));
     }
   }
   // Face-level ledger: every face already hashed (accepted or dropped), so a
