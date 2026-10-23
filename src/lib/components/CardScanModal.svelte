@@ -143,18 +143,26 @@
     return new Promise(r => setTimeout(r, ms));
   }
 
-  /** One continuous-mode attempt: single frame, lazy OCR (corner first, name bar only if needed). */
+  /** One continuous-mode attempt: a short burst of frames, lazy OCR (corner first, name bar only if needed). */
   async function continuousAttempt() {
     const token = scanToken;
     if (!videoEl || phase !== 'live') return;
     continuousBusy = true;
 
     try {
-      const frame = captureFrame(videoEl);
+      // A short burst instead of a single frame — one noisy or blank frame must
+      // not be able to trigger an accidental hash hit on its own.
+      const frames: HTMLCanvasElement[] = [];
+      for (let i = 0; i < BURST_FRAMES; i++) {
+        frames.push(captureFrame(videoEl));
+        if (i < BURST_FRAMES - 1) await nextFrame();
+      }
 
       // Fastest channel first — pHash against the local index (offline, ~ms).
-      // Only when it finds nothing do we spend tesseract time on OCR.
-      const hashResult = await hashChannel([frame], token);
+      // Require consensus: the same card must win at least half the burst frames,
+      // so a single noisy/blank frame can't force an acceptance. Only when it
+      // finds nothing do we spend tesseract time on OCR.
+      const hashResult = await hashChannel(frames, token, Math.ceil(BURST_FRAMES / 2));
       if (token !== scanToken) return;
       if (hashResult.card) {
         handleContinuousHit(hashResult.card);
@@ -162,7 +170,7 @@
       }
 
       // Fast path — bottom-left corner only (small crop, fast)
-      const setRead = await recognizeSetRegion(frame);
+      const setRead = await recognizeSetRegion(frames[0]);
       if (token !== scanToken) return;
 
       let card: ScryfallCard | null = null;
@@ -182,7 +190,7 @@
       // read that didn't resolve to a printing). Set info is passed along so the
       // lookup can still do an in-set search.
       if (!card) {
-        const nameRead = await recognizeNameRegion(frame);
+        const nameRead = await recognizeNameRegion(frames[0]);
         if (token !== scanToken) return;
         card = await identifyScannedCard({
           name: nameRead.name,
@@ -354,12 +362,15 @@
   /**
    * Hash channel — pHash of the art region matched against the local index.
    * Offline and fast (typically well under 100 ms); resolves a null card when
-   * nothing matches closely enough so the OCR channel can take over.
+   * nothing matches closely enough so the OCR channel can take over. `minVotes`
+   * requires the winning card to have matched at least that many of the input
+   * frames before it's accepted (continuous mode passes half the burst to guard
+   * against a single noisy/blank frame forcing an accidental hit).
    */
-  async function hashChannel(frames: HTMLCanvasElement[], token: number): Promise<ChannelResult> {
+  async function hashChannel(frames: HTMLCanvasElement[], token: number, minVotes = 1): Promise<ChannelResult> {
     try {
       const match = await identifyByHash(frames, videoAspect);
-      if (!match) return { card: null, method: 'hash' };
+      if (!match || match.votes < minVotes) return { card: null, method: 'hash' };
       const card = await lookupCardById(match.entry.id);
       if (token !== scanToken) return { card: null, method: 'hash' };
       return { card, method: 'hash' };

@@ -2,7 +2,7 @@
 /**
  * Pre-build perceptual-hash index for DeckSync camera scanning.
  *
- * Builds `public/card-hashes.jsonl` (JSON Lines), a local database of 64-bit
+ * Builds `public/card-hashes.bin` (compact binary), a local database of 64-bit
  * perceptual hashes (pHash) of card artwork. The camera scanner hashes the
  * central art region of a photographed card and matches it against this file —
  * a fast, network-free second identification channel that runs in parallel
@@ -14,7 +14,7 @@
  * distance. The app only ever hashes a single unrotated crop.
  *
  * The index is an append-only stream: as each face image is hashed, its entry
- * line is appended to the END of card-hashes.jsonl immediately — nothing is
+ * record is appended to the END of card-hashes.bin immediately — nothing is
  * held in memory for the whole run and no finished work can be lost. Resume
  * state lives entirely in side-car ledgers under scripts/.cache/ so the served
  * index stays lean (entry lines only, no bookkeeping): a name-level ledger
@@ -55,6 +55,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import sharp from 'sharp';
+import { writeHeader, appendBinRecord, readBinIndex } from './hash-index-bin.js';
 import {
   HASH_ART_REGION,
   HASH_ASPECT_CLASSES,
@@ -67,16 +68,16 @@ import {
 } from '../src/lib/ocr/phash.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/** Append-only JSON Lines index (the artifact served to the app). */
-const OUT_FILE = path.join(ROOT, 'public', 'card-hashes.jsonl');
-/** Previous fixed-format index — converted to JSONL once on first run. */
+/** Append-only binary index (the artifact served to the app) — see hash-index-bin.js. */
+const OUT_FILE = path.join(ROOT, 'public', 'card-hashes.bin');
+/** Previous fixed-format index — converted to binary once on first run. */
 const LEGACY_OUT_FILE = path.join(ROOT, 'public', 'card-hashes.json');
 const CACHE_DIR = path.join(ROOT, 'scripts', '.cache', 'hashes');
 /** Face-level progress ledger (accepted + dropped faces) for cancel/resume. */
 const PROGRESS_FILE = path.join(ROOT, 'scripts', '.cache', 'hashes-progress.jsonl');
 /** Name-level completion ledger — names fully processed in an earlier run, so a
  *  resume skips them without re-downloading/re-hashing. Kept out of the served
- *  index (card-hashes.jsonl) to keep that artifact lean. */
+ *  index (card-hashes.bin) to keep that artifact lean. */
 const DONE_NAMES_FILE = path.join(ROOT, 'scripts', '.cache', 'hashes-done.jsonl');
 
 const SCRYFALL_SEARCH_URL = 'https://api.scryfall.com/cards/search';
@@ -328,7 +329,7 @@ function isDuplicateOf(hashes, acceptedHashes) {
  * Processes one card name end to end: searches all English printings with
  * images and hashes the central art region of every face. Each finished face
  * is persisted immediately — accepted entries are appended to
- * card-hashes.jsonl, faces dropped by dedup only to the progress ledger — so
+ * card-hashes.bin, faces dropped by dedup only to the progress ledger — so
  * a cancelled run resumes without re-doing any work. Returns per-face counts;
  * `failed > 0` means at least one face errored and the name must NOT get a
  * done marker yet (the next run retries exactly those faces).
@@ -363,7 +364,7 @@ async function processName(name, ctx) {
         } else {
           acceptedHashes.push(hashes);
           // Durable the moment the image is hashed — no work lost on cancel.
-          appendLine(OUT_FILE, { id: card.id, name, face: face.face, hashes });
+          appendBinRecord(OUT_FILE, { id: card.id, name, face: face.face, hashes });
           appendLine(PROGRESS_FILE, { id: card.id, face: face.face, name, status: 'accepted' });
           added++;
         }
@@ -403,17 +404,9 @@ async function allCardNames() {
 
 // --- JSONL index file -----------------------------------------------------------
 
-/** File header written once when a fresh card-hashes.jsonl is created. */
-function metaHeader() {
-  return {
-    type: 'meta',
-    version: 3,
-    region: HASH_ART_REGION,
-    classes: HASH_ASPECT_CLASSES,
-    angles: HASH_STORE_ANGLES,
-    fills: HASH_STORE_FILLS,
-    threshold: HASH_MATCH_THRESHOLD
-  };
+/** Writes the binary header when the index file is new or empty (resume-safe). */
+function ensureIndexFile() {
+  if (!existsSync(OUT_FILE) || readFileSync(OUT_FILE).length === 0) writeHeader(OUT_FILE);
 }
 
 /** Appends one JSON record as a line — durable immediately (resume-safe). */
@@ -455,16 +448,16 @@ function migrateLegacyFile() {
   }
   const valid = (Array.isArray(legacy?.entries) ? legacy.entries : []).filter(e => e?.id && e.hashes);
   mkdirSync(path.dirname(OUT_FILE), { recursive: true });
-  writeFileSync(OUT_FILE, `${JSON.stringify(metaHeader())}\n`);
+  writeHeader(OUT_FILE);
   mkdirSync(CACHE_DIR, { recursive: true });
   for (const e of valid) {
-    appendLine(OUT_FILE, e);
+    appendBinRecord(OUT_FILE, e);
     appendLine(PROGRESS_FILE, { id: e.id, face: e.face ?? 0, name: e.name ?? '', status: 'accepted' });
   }
-  const migrated = readJsonl(OUT_FILE).filter(r => r?.id && r.hashes).length;
+  const migrated = readBinIndex(OUT_FILE).records.filter(r => r?.id && r.hashes).length;
   if (migrated === valid.length) {
     unlinkSync(LEGACY_OUT_FILE);
-    console.log(`[prepare-hashes] migrated ${migrated} entries: card-hashes.json → card-hashes.jsonl`);
+    console.log(`[prepare-hashes] migrated ${migrated} entries: card-hashes.json → card-hashes.bin`);
   } else {
     console.warn(`[prepare-hashes] migration mismatch (${migrated}/${valid.length}) — keeping card-hashes.json`);
   }
@@ -477,10 +470,11 @@ async function main() {
 
   migrateLegacyFile();
   mkdirSync(CACHE_DIR, { recursive: true });
+  ensureIndexFile();
 
-  // Load existing progress. The index can grow to tens of MB, so it is parsed
-  // line by line; only per-name entries (for dedup seeding) are kept in memory.
-  const records = readJsonl(OUT_FILE);
+  // Load existing progress. The binary index is decoded to hex hashes so the
+  // per-name dedup seeding below works exactly as before.
+  const records = readBinIndex(OUT_FILE).records;
   const entriesByName = new Map(); // normalized name -> entry[]
   let entryCount = 0;
   for (const rec of records) {

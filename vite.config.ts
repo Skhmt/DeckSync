@@ -38,7 +38,7 @@ export default defineConfig({
         // has to grow with those files, so Workbox's per-file size cap stops
         // being a constraint even as the OCR assets get bigger.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        globIgnores: ['tess/**', 'card-data.json', 'card-hashes.jsonl'],
+        globIgnores: ['tess/**', 'card-data.json', 'card-hashes.bin'],
         // The largest precached file is now an app bundle (not a Tesseract asset),
         // so the default 2 MiB cap would usually suffice; this headroom only
         // guards against an unusually large chunk being silently dropped.
@@ -63,7 +63,7 @@ export default defineConfig({
           // offline while refreshing in the background when online (so newly
           // added cards are picked up without a hard cache clear).
           {
-            urlPattern: /\/(card-data\.json|card-hashes\.jsonl)$/,
+            urlPattern: /\/(card-data\.json|card-hashes\.bin)$/,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'card-data',

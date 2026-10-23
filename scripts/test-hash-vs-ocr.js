@@ -13,7 +13,7 @@
  *   2. OCR channel: tesseract on the set/collector corner (+ name bar) with
  *      local validation against card-data.json — accuracy and time for a
  *      representative aligned photo per card.
- *   3. Storage cost: card-hashes.jsonl size (and projected full-build size)
+ *   3. Storage cost: card-hashes.bin size (and projected full-build size)
  *      vs the OCR asset footprint.
  *
  * Usage:
@@ -37,9 +37,10 @@ import {
   hammingDistance
 } from '../src/lib/ocr/phash.ts';
 import { parseSetAndCollector, extractCardName } from '../src/lib/ocr/parse.ts';
+import { readBinIndex } from './hash-index-bin.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const HASH_FILE = path.join(ROOT, 'public', 'card-hashes.jsonl');
+const HASH_FILE = path.join(ROOT, 'public', 'card-hashes.bin');
 const CARD_DATA_FILE = path.join(ROOT, 'public', 'card-data.json');
 const TESS_DIR = path.join(ROOT, 'public', 'tess');
 
@@ -132,6 +133,13 @@ async function benchHashChannel(index, names) {
   const entries = index.entries.filter(e => !names || names.has(e.name));
   if (entries.length === 0) return null;
 
+  // Mirror the app's runtime cap (cardHashes.ts): a stale meta value in an old
+  // build can't loosen the threshold past what ships in code. An explicit
+  // DECKSYNC_BENCH_THRESHOLD override lets us compare against the pre-tuning
+  // value (e.g. 12) to quantify the false-positive reduction.
+  const override = process.env.DECKSYNC_BENCH_THRESHOLD ? Number(process.env.DECKSYNC_BENCH_THRESHOLD) : null;
+  const effThreshold = override ?? Math.min(index.threshold ?? HASH_MATCH_THRESHOLD, HASH_MATCH_THRESHOLD);
+
   // Group by card id so cross-card distances are measured correctly
   const byCard = new Map();
   for (const e of entries) {
@@ -166,7 +174,7 @@ async function benchHashChannel(index, names) {
         for (const tilt of TILTS) {
           for (const fill of FILLS) {
             const zone = await simulatePhoto(face, cls, tilt, fill);
-            const { match, ms } = matchZone(zone, cls.key, entries, index.threshold ?? HASH_MATCH_THRESHOLD);
+            const { match, ms } = matchZone(zone, cls.key, entries, effThreshold);
             stats.total++;
             times.push(ms);
             if (match?.id === cardId) {
@@ -195,9 +203,9 @@ async function benchHashChannel(index, names) {
   console.log(`wrong card id:    ${stats.wrongCard} (${pct(stats.wrongCard)}%)  <- misidentification risk`);
   console.log(`no match (>thr):  ${stats.noMatch} (${pct(stats.noMatch)}%)  <- falls through to OCR`);
   if (distances.length) {
-    console.log(`match distance:   p50=${p(0.5)} p95=${p(0.95)} max=${sorted[sorted.length - 1]} (threshold ${index.threshold ?? HASH_MATCH_THRESHOLD})`);
+    console.log(`match distance:   p50=${p(0.5)} p95=${p(0.95)} max=${sorted[sorted.length - 1]} (threshold ${effThreshold})`);
   }
-  console.log(`closest wrong-card hit: ${minCross === Infinity ? 'none' : minCross + ' bits'} — margin to threshold: ${minCross === Infinity ? '-' : minCross - (index.threshold ?? HASH_MATCH_THRESHOLD)}`);
+  console.log(`closest wrong-card hit: ${minCross === Infinity ? 'none' : minCross + ' bits'} — margin to threshold: ${minCross === Infinity ? '-' : minCross - effThreshold}`);
   times.sort((a, b) => a - b);
   console.log(`per-frame cost:   p50=${times[Math.floor(times.length / 2)].toFixed(1)} ms  p95=${times[Math.floor(0.95 * times.length)].toFixed(1)} ms  (crop + hash + match, Node)`);
 }
@@ -281,7 +289,7 @@ function benchStorage(index) {
   console.log('\n--- Storage cost ---');
   const hashSize = existsSync(HASH_FILE) ? statSync(HASH_FILE).size : 0;
   const perEntry = index.entries.length ? Math.round(hashSize / index.entries.length) : 0;
-  console.log(`card-hashes.jsonl:        ${(hashSize / 1024).toFixed(0)} KB for ${index.entries.length} entries (~${perEntry} B/entry)`);
+  console.log(`card-hashes.bin:            ${(hashSize / 1024).toFixed(0)} KB for ${index.entries.length} entries (~${perEntry} B/entry)`);
   // Rough full-build projection: ~15k unique card names, ~1.6 unique artworks each
   console.log(`projected full build:     ~${((15000 * 1.6 * perEntry) / 1024 / 1024).toFixed(1)} MB (15k cards x ~1.6 faces)`);
 
@@ -297,39 +305,23 @@ function benchStorage(index) {
   console.log(`card-data.json:           ${(cardDataSize / 1024 / 1024).toFixed(1)} MB (name/printing validation)`);
 }
 
-/** Parses the JSONL index: the meta line (region/threshold) + entry lines. */
+/** Parses the binary index: header (region/threshold) + entry records. */
 function loadHashIndex() {
-  const index = { entries: [], region: HASH_ART_REGION, threshold: HASH_MATCH_THRESHOLD };
-  for (const raw of readFileSync(HASH_FILE, 'utf8').split('\n')) {
-    const line = raw.trim();
-    if (!line) continue;
-    let rec;
-    try {
-      rec = JSON.parse(line);
-    } catch {
-      continue; // tolerate a torn final line from an interrupted build
-    }
-    if (rec?.type === 'meta') {
-      if (rec.region) index.region = rec.region;
-      if (typeof rec.threshold === 'number') index.threshold = rec.threshold;
-    } else if (rec?.id && rec.hashes) {
-      index.entries.push(rec);
-    }
-  }
-  return index;
+  const { header, records } = readBinIndex(HASH_FILE);
+  return { entries: records, region: header.region, threshold: header.threshold };
 }
 
 // --- Main -----------------------------------------------------------------------------
 
 async function main() {
   if (!existsSync(HASH_FILE)) {
-    console.error('public/card-hashes.jsonl not found — run `npm run prepare:hashes` first.');
+    console.error('public/card-hashes.bin not found — run `npm run prepare:hashes` first.');
     process.exitCode = 1;
     return;
   }
   const index = loadHashIndex();
   if (index.entries.length === 0) {
-    console.error('card-hashes.jsonl has no entries — run `npm run prepare:hashes` first.');
+    console.error('card-hashes.bin has no entries — run `npm run prepare:hashes` first.');
     process.exitCode = 1;
     return;
   }

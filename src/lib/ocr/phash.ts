@@ -38,7 +38,7 @@ export interface FrameRectLike {
  * every frame style (old frames, modern frames, full-art), never touching the
  * name bar or text box. MUST stay in sync with scripts/prepare-hashes.js,
  * which crops the same fractions out of a synthetic zone render (the values
- * are also written into card-hashes.jsonl so the app reads them from there).
+ * are also written into card-hashes.bin so the app reads them from there).
  */
 export const HASH_ART_REGION = { x0: 0.25, y0: 0.20, x1: 0.75, y1: 0.60 };
 
@@ -73,8 +73,18 @@ export function hashAspectClassKey(frameAspect: number): string {
 export const HASH_STORE_ANGLES = [-8, -4, 0, 4, 8];
 export const HASH_STORE_FILLS = [1.0, 0.85];
 
-/** Max Hamming distance (of 64 bits) for a hash to count as a match. */
-export const HASH_MATCH_THRESHOLD = 12;
+/**
+ * Max Hamming distance (of 64 bits) for a hash to count as a match.
+ *
+ * Kept tight on purpose: the index holds ~230k hashes per aspect class, so at a
+ * loose threshold non-card crops (blank table, hand, empty frame) land within
+ * range of some stored face by pure chance and produce false positives. Real
+ * cards match their own pre-rotated/pre-scaled variant at near-zero distance,
+ * so 8 trades almost no recall for a large drop in accidental matches. Must
+ * stay >= HASH_DEDUP_DISTANCE below or a card's own variants could be split
+ * across families at build time.
+ */
+export const HASH_MATCH_THRESHOLD = 8;
 
 /** Pre-build dedupe: hashes within this distance are the same visual family. */
 export const HASH_DEDUP_DISTANCE = 8;
@@ -175,6 +185,46 @@ export function hammingDistance(a: string, b: string): number {
     dist += POPCOUNT[parseInt(a.slice(i * 2, i * 2 + 2), 16) ^ parseInt(b.slice(i * 2, i * 2 + 2), 16)];
   }
   return dist;
+}
+
+/** 16-bit popcount table (built once) — the workhorse for fast Hamming distance. */
+let PC16: Uint8Array | null = null;
+function pc16(): Uint8Array {
+  if (!PC16) {
+    PC16 = new Uint8Array(1 << 16);
+    for (let i = 1; i < PC16.length; i++) PC16[i] = PC16[i >> 1] + (i & 1);
+  }
+  return PC16;
+}
+
+/** Split a 16-char hex hash into its two 32-bit words [hi, lo]. */
+export function splitHash(hash: string): [number, number] {
+  return [parseInt(hash.slice(0, 8), 16) >>> 0, parseInt(hash.slice(8), 16) >>> 0];
+}
+
+/**
+ * Hamming distance (0–64) between two hashes given as packed 32-bit words.
+ * Two XORs + four 16-bit popcount lookups — no per-bit string slicing/parsing,
+ * so a full-index scan is ~200× cheaper than the string version.
+ */
+export function hammingPacked(hiA: number, loA: number, hiB: number, loB: number): number {
+  if (hiA === hiB && loA === loB) return 0;
+  const t = pc16();
+  const x = hiA ^ hiB;
+  const y = loA ^ loB;
+  return t[x & 0xffff] + t[(x >>> 16) & 0xffff] + t[y & 0xffff] + t[(y >>> 16) & 0xffff];
+}
+
+/** Pack an array of 16-char hex hashes into two parallel 32-bit word arrays. */
+export function packHashes(hashes: string[]): { hi: Uint32Array; lo: Uint32Array } {
+  const n = hashes.length;
+  const hi = new Uint32Array(n);
+  const lo = new Uint32Array(n);
+  for (let i = 0; i < n; i++) {
+    hi[i] = parseInt(hashes[i].slice(0, 8), 16) >>> 0;
+    lo[i] = parseInt(hashes[i].slice(8), 16) >>> 0;
+  }
+  return { hi, lo };
 }
 
 

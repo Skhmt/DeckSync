@@ -10,12 +10,13 @@
  * (ties break on lowest average distance).
  */
 
-import { ensureCardHashes, type CardHashEntry } from '../data/cardHashes';
+import { ensureCardHashes, type CardHashEntry, type PackedClass } from '../data/cardHashes';
 import { CARD_ZONE } from './cardScanner';
 import {
   computePHashFromRGBA,
-  hammingDistance,
+  hammingPacked,
   hashAspectClassKey,
+  splitHash,
   type PixelBuffer
 } from './phash';
 
@@ -75,28 +76,73 @@ function cropHashRegion(
   return { data: img.data, width: w, height: h };
 }
 
+/**
+ * Minimum luma dynamic range (1st–99th percentile) for a crop to plausibly
+ * contain card artwork. A blank table, empty frame, or a hand has a near-
+ * constant luma distribution and would otherwise hash-match some stored face
+ * by chance; rejecting it routes the frame to OCR instead. Real card art always
+ * spans far more than this across the central region, so this is conservative
+ * enough not to cost recall.
+ */
+const MIN_CONTENT_RANGE = 24;
+
+/** True when the crop has enough luma spread to plausibly contain card art. */
+export function hasCardContent(pix: PixelBuffer): boolean {
+  const { data, width, height } = pix;
+  const n = width * height;
+  const hist = new Uint32Array(256);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    // Luma — same weights as the OCR preprocessing in cardScanner.ts.
+    hist[(0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]) | 0]++;
+  }
+  const total = n;
+  let lo = 0;
+  let acc = 0;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= total * 0.01) { lo = v; break; }
+  }
+  let hi = 255;
+  acc = 0;
+  for (let v = 255; v >= 0; v--) {
+    acc += hist[v];
+    if (acc >= total * 0.01) { hi = v; break; }
+  }
+  return hi - lo >= MIN_CONTENT_RANGE;
+}
+
 /** Finds the closest index entry for one frame (null when nothing is close enough). */
 function matchFrame(
   frame: HTMLCanvasElement,
   classKey: string,
   entries: CardHashEntry[],
+  packed: Record<string, PackedClass>,
   region: { x0: number; y0: number; x1: number; y1: number },
   threshold: number
 ): HashFrameMatch | null {
   const pix = cropHashRegion(frame, region);
   if (!pix) return null;
+  // Reject near-uniform crops (blank table, empty frame, hand) before hashing —
+  // they'd otherwise match some stored face by chance. OCR handles the fallback.
+  if (!hasCardContent(pix)) return null;
   const hash = computePHashFromRGBA(pix);
 
-  let best: HashFrameMatch | null = null;
-  for (const entry of entries) {
-    const variants = entry.hashes[classKey];
-    if (!variants) continue;
-    for (const stored of variants) {
-      const d = hammingDistance(stored, hash);
-      if (!best || d < best.distance) best = { entry, distance: d };
+  // Scan the packed per-class arrays (SoA) with a tight numeric Hamming loop —
+  // ~200× faster than the old per-bit string scan over every entry's variants.
+  const pc = packed[classKey];
+  if (!pc || pc.hi.length === 0) return null;
+  const [qHi, qLo] = splitHash(hash);
+  let bestDist = 65;
+  let bestSlot = -1;
+  for (let i = 0; i < pc.hi.length; i++) {
+    const d = hammingPacked(pc.hi[i], pc.lo[i], qHi, qLo);
+    if (d < bestDist) {
+      bestDist = d;
+      bestSlot = i;
     }
   }
-  return best && best.distance <= threshold ? best : null;
+  if (bestSlot < 0 || bestDist > threshold) return null;
+  return { entry: entries[pc.owner[bestSlot]], distance: bestDist };
 }
 
 /**
@@ -119,7 +165,7 @@ export async function identifyByHash(
   let bestDistance = Infinity;
 
   for (const frame of frames) {
-    const m = matchFrame(frame, classKey, idx.entries, idx.region, idx.threshold);
+    const m = matchFrame(frame, classKey, idx.entries, idx.packed, idx.region, idx.threshold);
     if (!m) continue;
     const v = votes.get(m.entry.id) ?? { card: m.entry.id, count: 0, totalDist: 0 };
     v.count++;
